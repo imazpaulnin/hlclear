@@ -502,7 +502,8 @@ function durationLabel(start?: number, end?: number): string {
 
 function getPortfolioEstimate(snapshot: HyperliquidSnapshot, period: string): Decimal {
   const found = snapshot.portfolio.find((entry) => entry.period.toLowerCase() === period.toLowerCase());
-  const value = found?.pnlHistory.at(-1)?.value ?? "0";
+  const history = found?.pnlHistory;
+  const value = history && history.length > 0 ? history[history.length - 1]?.value ?? "0" : "0";
   return dec(value);
 }
 
