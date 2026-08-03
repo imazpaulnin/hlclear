@@ -1,8 +1,8 @@
-const CACHE_NAME = "hlclear-shell-v2";
+const CACHE_NAME = "hlclear-shell-v3";
 const STATIC_EXTENSIONS = [".js", ".css", ".png", ".svg", ".ico", ".webmanifest"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(["./", "./index.html", "./manifest.webmanifest"])));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(["./manifest.webmanifest"])));
   self.skipWaiting();
 });
 
@@ -36,6 +36,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (isNavigationRequest(event.request, requestUrl)) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {
@@ -50,8 +55,7 @@ self.addEventListener("fetch", (event) => {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           return response;
-        })
-        .catch(() => caches.match("./index.html"));
+        });
     })
   );
 });
@@ -67,4 +71,30 @@ function shouldCache(requestUrl) {
   }
 
   return STATIC_EXTENSIONS.some((extension) => requestUrl.pathname.endsWith(extension));
+}
+
+function isNavigationRequest(request, requestUrl) {
+  return request.mode === "navigate" || requestUrl.pathname.endsWith("/") || requestUrl.pathname.endsWith("/index.html");
+}
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+
+  try {
+    const response = await fetch(request);
+    if (response.ok && response.type !== "opaque") {
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) {
+      return cached;
+    }
+    return new Response("Offline", {
+      status: 503,
+      statusText: "Offline",
+      headers: { "Content-Type": "text/plain; charset=utf-8" }
+    });
+  }
 }
