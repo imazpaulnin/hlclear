@@ -46,6 +46,38 @@ export interface ClearinghouseState {
   positions: ApiPosition[];
 }
 
+export interface SpotBalance {
+  coin: string;
+  token?: number;
+  total: string;
+  hold: string;
+  entryNtl?: string;
+}
+
+export interface SpotClearinghouseState {
+  balances: SpotBalance[];
+}
+
+export type AccountMode = "standard" | "unifiedAccount" | "portfolioMargin" | "unknown";
+
+export interface SubAccountSummary {
+  name: string;
+  subAccountUser: string;
+  master?: string;
+  clearinghouseState?: ClearinghouseState;
+  spotState?: SpotClearinghouseState;
+}
+
+export interface AccountIdentity {
+  userAbstractionRaw: unknown;
+  userAbstraction?: string;
+  userRoleRaw: unknown;
+  userRole?: string;
+  mode: AccountMode;
+  isMainAccount: boolean;
+  subAccounts: SubAccountSummary[];
+}
+
 export interface ApiPosition {
   coin: string;
   size: string;
@@ -415,6 +447,28 @@ export interface EstimatePresentation {
 }
 
 export interface SummaryPresentation {
+  accountMode: AccountMode;
+  accountModeLabel: string;
+  totalEquity: MoneyValue;
+  tradingEquity: MoneyValue;
+  totalEquityVerified: boolean;
+  totalEquitySource: string;
+  tradingEquitySource: string;
+  totalEquityFormula: string;
+  tradingEquityFormula: string;
+  totalEquityWarning?: string;
+  usdcTotal: MoneyValue;
+  usdcHeld: MoneyValue;
+  usdcAvailable: MoneyValue;
+  openPositionsCount: number;
+  otherSpotAssets: Array<{
+    coin: string;
+    total: MoneyValue;
+    held: MoneyValue;
+    available: MoneyValue;
+    entryNotional?: MoneyValue;
+  }>;
+  duplicateRiskWarning?: string;
   accountValue: MoneyValue;
   withdrawable: MoneyValue;
   marginUsed: MoneyValue;
@@ -449,6 +503,18 @@ export interface DashboardPresentation {
   builderFeeDetected: boolean;
   historyCoverage: HistoryCoverage;
   audit: AccountingAudit;
+  diagnostics: {
+    environment: Network;
+    addressShort: string;
+    userAbstractionRaw: unknown;
+    userRoleRaw: unknown;
+    clearinghouseStateRaw: unknown;
+    spotClearinghouseStateRaw: unknown;
+    subAccountsRaw: unknown;
+    fieldsUsed: Array<{ label: string; field: string }>;
+    formulas: Array<{ label: string; formula: string }>;
+    duplicationWarning?: string;
+  };
 }
 
 export interface HyperliquidSnapshot {
@@ -458,7 +524,11 @@ export interface HyperliquidSnapshot {
   stale: boolean;
   apiHealth: "healthy" | "error";
   raw: {
+    userAbstraction: unknown;
+    userRole: unknown;
     clearinghouseState: unknown;
+    spotClearinghouseState: unknown;
+    subAccounts: unknown;
     portfolio: unknown;
     userFees: unknown;
     metaAndAssetCtxs: unknown;
@@ -467,7 +537,9 @@ export interface HyperliquidSnapshot {
     funding: unknown;
     ledger: unknown;
   };
+  accountIdentity: AccountIdentity;
   clearinghouseState: ClearinghouseState;
+  spotClearinghouseState: SpotClearinghouseState;
   portfolio: PortfolioPeriod[];
   userFees: UserFees;
   universe: PerpAssetMeta[];

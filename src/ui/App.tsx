@@ -149,6 +149,13 @@ export function App() {
         />
 
         <div className="stack page-stack">
+          {state.settings.network === "testnet" && (
+            <div className="card danger" role="status">
+              <strong>Estas viendo Testnet.</strong>
+              <div>Los fondos reales de Mainnet no apareceran aqui.</div>
+            </div>
+          )}
+
           {(activeSnapshot?.stale || !online) && (
             <div className="banner" role="status">
               <strong>Datos desactualizados</strong>
@@ -322,7 +329,41 @@ function SummaryTab({
           </div>
 
           <div className="grid-2">
-            <MetricCard label="Valor total" value={dashboard.summary.accountValue.rounded} />
+            <MetricCard label="Tipo de cuenta" value={dashboard.summary.accountModeLabel} />
+            <MetricCard label="Total Equity" value={dashboard.summary.totalEquityVerified ? dashboard.summary.totalEquity.rounded : "No verificado"} />
+            <MetricCard label="Trading Equity" value={dashboard.summary.tradingEquity.rounded} />
+            <MetricCard label="USDC disponible" value={dashboard.summary.usdcAvailable.rounded} />
+            <MetricCard label="USDC retenido" value={dashboard.summary.usdcHeld.rounded} />
+            <MetricCard label="Margen usado" value={dashboard.summary.marginUsed.rounded} />
+            <MetricCard label="Posiciones abiertas" value={String(dashboard.summary.openPositionsCount)} />
+            <MetricCard label="USDC total" value={dashboard.summary.usdcTotal.rounded} />
+          </div>
+
+          <div className="card compact-card stack dense-stack">
+            <h2>Fuente de saldo</h2>
+            <Line label="Total Equity" value={dashboard.summary.totalEquitySource} />
+            <Line label="Trading Equity" value={dashboard.summary.tradingEquitySource} />
+            <Line label="Formula total" value={dashboard.summary.totalEquityFormula} />
+            <Line label="Formula trading" value={dashboard.summary.tradingEquityFormula} />
+            {dashboard.summary.totalEquityWarning && <div className="pill">{dashboard.summary.totalEquityWarning}</div>}
+            {dashboard.summary.duplicateRiskWarning && <div className="pill">{dashboard.summary.duplicateRiskWarning}</div>}
+          </div>
+
+          {dashboard.summary.otherSpotAssets.length > 0 && (
+            <div className="card compact-card stack dense-stack">
+              <h2>Otros activos spot</h2>
+              {dashboard.summary.otherSpotAssets.map((asset) => (
+                <div key={asset.coin} className="stack dense-stack">
+                  <Line label={asset.coin} value={asset.total.rounded} />
+                  <Line label={`${asset.coin} retenido`} value={asset.held.rounded} />
+                  <Line label={`${asset.coin} disponible`} value={asset.available.rounded} />
+                  <Line label={`${asset.coin} entryNtl`} value={asset.entryNotional?.rounded ?? "N/D"} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid-2">
             <MetricCard label="Saldo retirable" value={dashboard.summary.withdrawable.rounded} />
             <MetricCard label="Margen usado" value={dashboard.summary.marginUsed.rounded} />
             <MetricCard label="Depositos netos" value={dashboard.summary.netExternalDeposits.rounded} />
@@ -716,6 +757,10 @@ function MoreTab({
                 </button>
 
                 <div className="caption">La auditoria local no carga datos por defecto y cualquier exportacion se genera solo en este dispositivo.</div>
+
+                {dashboard && snapshot && (
+                  <AccountDiagnosticsPanel dashboard={dashboard} snapshot={snapshot} />
+                )}
               </div>
             )}
           </div>
@@ -797,6 +842,74 @@ function AuditPanel({
       <details className="card compact-card">
         <summary>Payloads de lectura</summary>
         <pre className="technical-block">{JSON.stringify(getReadOnlyPayloads(snapshot.address, Date.now()), null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function AccountDiagnosticsPanel({
+  dashboard,
+  snapshot
+}: {
+  dashboard: DashboardPresentation;
+  snapshot: HyperliquidSnapshot;
+}) {
+  return (
+    <div className="stack">
+      <div className="card compact-card stack dense-stack">
+        <h2>Diagnostico de cuenta</h2>
+        <Line label="Entorno consultado" value={dashboard.diagnostics.environment} />
+        <Line label="Direccion abreviada" value={dashboard.diagnostics.addressShort} />
+        <Line label="Tipo de cuenta" value={dashboard.summary.accountModeLabel} />
+        {dashboard.diagnostics.fieldsUsed.map((entry) => (
+          <Line key={entry.label} label={entry.label} value={entry.field} />
+        ))}
+        {dashboard.diagnostics.formulas.map((entry) => (
+          <Line key={entry.label} label={entry.label} value={entry.formula} />
+        ))}
+        {dashboard.diagnostics.duplicationWarning && <div className="pill">{dashboard.diagnostics.duplicationWarning}</div>}
+      </div>
+
+      <details className="card compact-card">
+        <summary>userAbstraction raw</summary>
+        <pre className="technical-block">{JSON.stringify(dashboard.diagnostics.userAbstractionRaw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>userRole raw</summary>
+        <pre className="technical-block">{JSON.stringify(dashboard.diagnostics.userRoleRaw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>clearinghouseState raw</summary>
+        <pre className="technical-block">{JSON.stringify(dashboard.diagnostics.clearinghouseStateRaw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>spotClearinghouseState raw</summary>
+        <pre className="technical-block">{JSON.stringify(dashboard.diagnostics.spotClearinghouseStateRaw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>subAccounts raw</summary>
+        <pre className="technical-block">{JSON.stringify(dashboard.diagnostics.subAccountsRaw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>Snapshot resumido local</summary>
+        <pre className="technical-block">
+          {JSON.stringify(
+            {
+              network: snapshot.network,
+              address: snapshot.address,
+              mode: snapshot.accountIdentity.mode,
+              role: snapshot.accountIdentity.userRole,
+              subAccounts: snapshot.accountIdentity.subAccounts.length
+            },
+            null,
+            2
+          )}
+        </pre>
       </details>
     </div>
   );

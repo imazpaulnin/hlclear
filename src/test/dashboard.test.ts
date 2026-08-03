@@ -13,6 +13,7 @@ import { dec } from "../domain/decimal";
 import { determineProfitStatus } from "../domain/profitStatus";
 import { getApiBaseUrl, getReadOnlyPayloads } from "../data/hyperliquidApi";
 import type {
+  AccountMode,
   ApiPosition,
   Fill,
   FundingEntry,
@@ -345,7 +346,201 @@ describe("api configuration", () => {
   it("30. CORS Mainnet: existen payloads de solo lectura para navegador real", () => {
     const payloads = getReadOnlyPayloads("0x0000000000000000000000000000000000000000", Date.now());
     expect(getApiBaseUrl("mainnet")).toBe("https://api.hyperliquid.xyz");
-    expect(payloads).toHaveLength(8);
+    expect(payloads).toHaveLength(12);
+  });
+});
+
+describe("account mode and balance reading", () => {
+  it("31. testnet vacio y mainnet con 244,04 USDC no se mezclan", () => {
+    const testnetDashboard = buildDashboard(
+      makeSnapshot({
+        network: "testnet",
+        accountMode: "unifiedAccount",
+        accountValue: "0",
+        marginUsed: "0",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "0", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    const mainnetDashboard = buildDashboard(
+      makeSnapshot({
+        network: "mainnet",
+        accountMode: "unifiedAccount",
+        accountValue: "0",
+        marginUsed: "0",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "244.04", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(testnetDashboard.summary.totalEquity.exact.toString()).toBe("0");
+    expect(mainnetDashboard.summary.totalEquity.exact.toString()).toBe("244.04");
+  });
+
+  it("32. unified account usa spot aunque clearinghouseState sea 0", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "unifiedAccount",
+        accountValue: "0",
+        marginUsed: "0",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "244.04", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.accountModeLabel).toBe("Unificada");
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("244.04");
+    expect(dashboard.summary.tradingEquity.exact.toString()).toBe("244.04");
+    expect(dashboard.summary.totalEquityVerified).toBe(true);
+  });
+
+  it("33. standard account con fondos solo en perpetuos", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "standard",
+        accountValue: "150.5",
+        marginUsed: "12.5",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "0", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("150.5");
+    expect(dashboard.summary.tradingEquity.exact.toString()).toBe("150.5");
+    expect(dashboard.summary.totalEquityVerified).toBe(true);
+  });
+
+  it("34. standard account con fondos solo en spot", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "standard",
+        accountValue: "0",
+        marginUsed: "0",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "88.25", hold: "1.25", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("88.25");
+    expect(dashboard.summary.usdcAvailable.exact.toString()).toBe("87");
+    expect(dashboard.summary.totalEquityVerified).toBe(true);
+  });
+
+  it("35. portfolio margin usa spot como fuente principal", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "portfolioMargin",
+        accountValue: "0",
+        marginUsed: "4",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "321.11", hold: "21.11", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.accountModeLabel).toBe("Portfolio Margin");
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("321.11");
+    expect(dashboard.summary.usdcHeld.exact.toString()).toBe("21.11");
+  });
+
+  it("36. cuenta con posiciones abiertas mantiene margen y posiciones separadas", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "unifiedAccount",
+        accountValue: "0",
+        marginUsed: "55.5",
+        positions: [position({ coin: "ETH", size: "2", positionValue: "400", marginUsed: "55.5", unrealizedPnl: "12" })],
+        spotBalances: [{ coin: "USDC", total: "244.04", hold: "55.5", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.openPositionsCount).toBe(1);
+    expect(dashboard.summary.marginUsed.exact.toString()).toBe("55.5");
+    expect(dashboard.positions).toHaveLength(1);
+  });
+
+  it("37. subcuenta no consulta ni trata la direccion como cuenta principal", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "unifiedAccount",
+        userRoleRaw: { role: "subAccount" },
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "44", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.diagnostics.userRoleRaw).toEqual({ role: "subAccount" });
+  });
+
+  it("38. prevencion de doble contabilizacion en modo standard ambiguo", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "standard",
+        accountValue: "100",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "100", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.totalEquityVerified).toBe(false);
+    expect(dashboard.summary.totalEquityWarning).toContain("doble contabilización");
+  });
+
+  it("39. userAbstraction desconocido no promueve un total de 0 como verificado", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "unknown",
+        userAbstractionRaw: "mysteryMode",
+        accountValue: "0",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "244.04", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.accountModeLabel).toBe("Desconocida");
+    expect(dashboard.summary.totalEquityVerified).toBe(false);
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("0");
+  });
+
+  it("40. fallo de clearinghouseState con spot valido mantiene el total unificado", () => {
+    const snapshot = makeSnapshot({
+      accountMode: "unifiedAccount",
+      accountValue: "0",
+      marginUsed: "0",
+      positions: [],
+      spotBalances: [{ coin: "USDC", total: "244.04", hold: "0", token: 0 }]
+    });
+    snapshot.raw.clearinghouseState = { error: "HTTP 500 al consultar clearinghouseState" };
+    const dashboard = buildDashboard(snapshot, settings);
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("244.04");
+    expect(dashboard.summary.tradingEquity.exact.toString()).toBe("244.04");
+  });
+
+  it("41. fallo de spotClearinghouseState con clearinghouseState valido conserva trading equity", () => {
+    const snapshot = makeSnapshot({
+      accountMode: "standard",
+      accountValue: "99.01",
+      positions: [],
+      spotBalances: [{ coin: "USDC", total: "0", hold: "0", token: 0 }]
+    });
+    snapshot.raw.spotClearinghouseState = { error: "HTTP 500 al consultar spotClearinghouseState" };
+    const dashboard = buildDashboard(snapshot, settings);
+    expect(dashboard.summary.tradingEquity.exact.toString()).toBe("99.01");
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("99.01");
+  });
+
+  it("42. no hay total verificado cuando ambas fuentes son ambiguas", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "unknown",
+        accountValue: "120",
+        positions: [],
+        spotBalances: [{ coin: "USDC", total: "80", hold: "0", token: 0 }]
+      }),
+      settings
+    );
+    expect(dashboard.summary.totalEquityVerified).toBe(false);
+    expect(dashboard.summary.totalEquityWarning).toContain("Modo de cuenta desconocido");
   });
 });
 
@@ -353,8 +548,17 @@ function makeSnapshot(overrides: {
   fills?: Fill[];
   fundings?: FundingEntry[];
   ledger?: LedgerUpdate[];
+  network?: HyperliquidSnapshot["network"];
+  accountMode?: AccountMode;
+  userAbstractionRaw?: unknown;
+  userRoleRaw?: unknown;
+  spotBalances?: Array<{ coin: string; total: string; hold?: string; entryNtl?: string; token?: number }>;
+  subAccountsRaw?: unknown;
   positionSize?: string;
+  positions?: ApiPosition[];
   accountValue?: string;
+  withdrawable?: string;
+  marginUsed?: string;
   userCrossRate?: string;
   userAddRate?: string;
   historyCoverage?: HyperliquidSnapshot["historyCoverage"];
@@ -369,11 +573,15 @@ function makeSnapshot(overrides: {
   return {
     fetchedAt: new Date("2026-08-03T10:00:00Z").toISOString(),
     address: settings.address,
-    network: "testnet",
+    network: overrides.network ?? "testnet",
     stale: false,
     apiHealth: "healthy",
     raw: {
+      userAbstraction: overrides.userAbstractionRaw ?? overrides.accountMode ?? "disabled",
+      userRole: overrides.userRoleRaw ?? { role: "user" },
       clearinghouseState: {},
+      spotClearinghouseState: {},
+      subAccounts: overrides.subAccountsRaw ?? [],
       portfolio: {},
       userFees: {},
       metaAndAssetCtxs: {},
@@ -382,20 +590,40 @@ function makeSnapshot(overrides: {
       funding: {},
       ledger: {}
     },
+    accountIdentity: {
+      userAbstractionRaw: overrides.userAbstractionRaw ?? overrides.accountMode ?? "disabled",
+      userAbstraction: normalizeModeToAbstraction(overrides.accountMode),
+      userRoleRaw: overrides.userRoleRaw ?? { role: "user" },
+      userRole: normalizeRole(overrides.userRoleRaw),
+      mode: overrides.accountMode ?? "standard",
+      isMainAccount: normalizeRole(overrides.userRoleRaw) === "user",
+      subAccounts: []
+    },
     clearinghouseState: {
       accountValue: overrides.accountValue ?? "1200",
-      withdrawable: "900",
-      marginUsed: "100",
+      withdrawable: overrides.withdrawable ?? "900",
+      marginUsed: overrides.marginUsed ?? "100",
       unrealizedPnl: "0.18",
-      positions: [
-        position({
-          size: positionSize,
-          unrealizedPnl: "0.18",
-          positionValue: "400",
-          entryPrice: "100",
-          leverage: "5"
-        })
-      ]
+      positions:
+        overrides.positions ??
+        [
+          position({
+            size: positionSize,
+            unrealizedPnl: "0.18",
+            positionValue: "400",
+            entryPrice: "100",
+            leverage: "5"
+          })
+        ]
+    },
+    spotClearinghouseState: {
+      balances: (overrides.spotBalances ?? [{ coin: "USDC", total: "0", hold: "0", token: 0 }]).map((balance) => ({
+        coin: balance.coin,
+        total: balance.total,
+        hold: balance.hold ?? "0",
+        token: balance.token,
+        entryNtl: balance.entryNtl
+      }))
     },
     portfolio: [period("day", "12"), period("week", "30"), period("month", "80")],
     userFees: {
@@ -430,6 +658,26 @@ function makeSnapshot(overrides: {
         isCompleteForRequestedPeriod: true
       }
   };
+}
+
+function normalizeModeToAbstraction(mode?: AccountMode): string {
+  if (mode === "unifiedAccount" || mode === "portfolioMargin") {
+    return mode;
+  }
+  if (mode === "unknown") {
+    return "mystery";
+  }
+  return "disabled";
+}
+
+function normalizeRole(raw?: unknown): string {
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (raw && typeof raw === "object" && "role" in raw) {
+    return String((raw as { role?: unknown }).role ?? "user");
+  }
+  return "user";
 }
 
 function position(input: Partial<ApiPosition>): ApiPosition {

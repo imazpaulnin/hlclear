@@ -1,5 +1,7 @@
 import { dec } from "../domain/decimal";
 import type {
+  AccountIdentity,
+  AccountMode,
   ApiPosition,
   ClearinghouseState,
   Fill,
@@ -14,6 +16,9 @@ import type {
   OpenOrder,
   PerpAssetMeta,
   PortfolioPeriod,
+  SpotBalance,
+  SpotClearinghouseState,
+  SubAccountSummary,
   UserFees
 } from "../domain/types";
 
@@ -34,8 +39,20 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
   const end = Date.now();
   const start = end - 1000 * 60 * 60 * 24 * 365 * 3;
 
+  const [userAbstractionResult, userRoleResult, clearinghouseResult, spotResult] = await Promise.all([
+    postSafe(baseUrl, { type: "userAbstraction", user: address }),
+    postSafe(baseUrl, { type: "userRole", user: address }),
+    postSafe(baseUrl, { type: "clearinghouseState", user: address }),
+    postSafe(baseUrl, { type: "spotClearinghouseState", user: address })
+  ]);
+
+  const userRoleRaw = userRoleResult.ok ? userRoleResult.data : { error: userRoleResult.error };
+  const subAccountsResult =
+    normalizeUserRole(userRoleRaw) === "user"
+      ? await postSafe(baseUrl, { type: "subAccounts", user: address })
+      : { ok: true as const, data: [] as unknown };
+
   const [
-    clearinghouseRaw,
     portfolioRaw,
     userFeesRaw,
     metaRaw,
@@ -44,7 +61,6 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
     fundingPage,
     ledgerPage
   ] = await Promise.all([
-    post(baseUrl, { type: "clearinghouseState", user: address }),
     post(baseUrl, { type: "portfolio", user: address }),
     post(baseUrl, { type: "userFees", user: address }),
     post(baseUrl, { type: "metaAndAssetCtxs" }),
@@ -65,7 +81,11 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
     stale: false,
     apiHealth: "healthy",
     raw: {
-      clearinghouseState: clearinghouseRaw,
+      userAbstraction: userAbstractionResult.ok ? userAbstractionResult.data : { error: userAbstractionResult.error },
+      userRole: userRoleRaw,
+      clearinghouseState: clearinghouseResult.ok ? clearinghouseResult.data : { error: clearinghouseResult.error },
+      spotClearinghouseState: spotResult.ok ? spotResult.data : { error: spotResult.error },
+      subAccounts: subAccountsResult.ok ? subAccountsResult.data : { error: subAccountsResult.error },
       portfolio: portfolioRaw,
       userFees: userFeesRaw,
       metaAndAssetCtxs: metaRaw,
@@ -74,7 +94,13 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
       funding: fundingPage.raw,
       ledger: ledgerPage.raw
     },
-    clearinghouseState: normalizeClearinghouseState(clearinghouseRaw),
+    accountIdentity: normalizeAccountIdentity(
+      userAbstractionResult.ok ? userAbstractionResult.data : undefined,
+      userRoleRaw,
+      subAccountsResult.ok ? subAccountsResult.data : undefined
+    ),
+    clearinghouseState: normalizeClearinghouseState(clearinghouseResult.ok ? clearinghouseResult.data : undefined),
+    spotClearinghouseState: normalizeSpotClearinghouseState(spotResult.ok ? spotResult.data : undefined),
     portfolio: normalizePortfolio(portfolioRaw),
     userFees: normalizeUserFees(userFeesRaw),
     universe: normalizeUniverse(metaRaw),
@@ -90,7 +116,11 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
 
 export function getReadOnlyPayloads(address: string, endTime: number): Array<Record<string, unknown>> {
   return [
+    { type: "userAbstraction", user: address },
+    { type: "userRole", user: address },
     { type: "clearinghouseState", user: address },
+    { type: "spotClearinghouseState", user: address },
+    { type: "subAccounts", user: address },
     { type: "portfolio", user: address },
     { type: "userFees", user: address },
     { type: "metaAndAssetCtxs" },
@@ -99,6 +129,20 @@ export function getReadOnlyPayloads(address: string, endTime: number): Array<Rec
     { type: "userFunding", user: address, startTime: 0, endTime },
     { type: "userNonFundingLedgerUpdates", user: address, startTime: 0, endTime }
   ];
+}
+
+async function postSafe(
+  baseUrl: string,
+  body: Record<string, unknown>
+): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+  try {
+    return { ok: true, data: await post(baseUrl, body) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : `Error al consultar ${String(body.type)}`
+    };
+  }
 }
 
 async function post(baseUrl: string, body: Record<string, unknown>): Promise<unknown> {
@@ -281,6 +325,94 @@ function normalizeClearinghouseState(input: unknown): ClearinghouseState {
     unrealizedPnl: positions.reduce((sum, position) => sum.plus(dec(position.unrealizedPnl)), dec(0)).toString(),
     positions
   };
+}
+
+function normalizeSpotClearinghouseState(input: unknown): SpotClearinghouseState {
+  const source = asRecord(input);
+  const balances = Array.isArray(source.balances)
+    ? source.balances.map(normalizeSpotBalance).filter((entry) => entry.coin.length > 0)
+    : [];
+
+  return { balances };
+}
+
+function normalizeSpotBalance(input: unknown): SpotBalance {
+  const source = asRecord(input);
+  return {
+    coin: String(source.coin ?? ""),
+    token: numberOrUndefined(source.token),
+    total: String(source.total ?? "0"),
+    hold: String(source.hold ?? "0"),
+    entryNtl: stringOrUndefined(source.entryNtl)
+  };
+}
+
+function normalizeAccountIdentity(userAbstractionRaw: unknown, userRoleRaw: unknown, subAccountsRaw: unknown): AccountIdentity {
+  const userAbstraction = normalizeUserAbstraction(userAbstractionRaw);
+  const userRole = normalizeUserRole(userRoleRaw);
+  const mode = resolveAccountMode(userAbstraction);
+
+  return {
+    userAbstractionRaw,
+    userAbstraction,
+    userRoleRaw,
+    userRole,
+    mode,
+    isMainAccount: userRole === "user",
+    subAccounts: normalizeSubAccounts(subAccountsRaw)
+  };
+}
+
+function normalizeSubAccounts(input: unknown): SubAccountSummary[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.map((entry) => {
+    const source = asRecord(entry);
+    return {
+      name: String(source.name ?? ""),
+      subAccountUser: String(source.subAccountUser ?? ""),
+      master: stringOrUndefined(source.master),
+      clearinghouseState: source.clearinghouseState ? normalizeClearinghouseState(source.clearinghouseState) : undefined,
+      spotState: source.spotState ? normalizeSpotClearinghouseState(source.spotState) : undefined
+    };
+  });
+}
+
+function normalizeUserAbstraction(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    return input;
+  }
+  const source = asRecord(input);
+  const value = source.abstraction ?? source.value ?? source.mode ?? source.status;
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function normalizeUserRole(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    return input;
+  }
+  const source = asRecord(input);
+  const value = source.role ?? source.type ?? source.value;
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function resolveAccountMode(userAbstraction?: string): AccountMode {
+  const normalized = userAbstraction?.trim();
+  if (!normalized) {
+    return "unknown";
+  }
+  if (normalized === "disabled" || normalized === "standard") {
+    return "standard";
+  }
+  if (normalized === "unifiedAccount") {
+    return "unifiedAccount";
+  }
+  if (normalized === "portfolioMargin") {
+    return "portfolioMargin";
+  }
+  return "unknown";
 }
 
 function normalizePortfolio(input: unknown): PortfolioPeriod[] {

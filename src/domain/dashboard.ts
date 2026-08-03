@@ -4,6 +4,7 @@ import { buildPositionCycles } from "./cycles";
 import { buildAccountingAudit, deriveGrossTradingPnl, deriveNetPnl, hasUnknownLedgerRows, splitRawFee } from "./accounting";
 import { determineProfitStatus, hasUnknownFeeToken, toleranceDecimal } from "./profitStatus";
 import type {
+  AccountMode,
   ClosedCyclePresentation,
   DailySummaryPresentation,
   DashboardPresentation,
@@ -21,6 +22,7 @@ export function buildDashboard(snapshot: HyperliquidSnapshot, settings: UserSett
   const withdrawable = dec(snapshot.clearinghouseState.withdrawable);
   const marginUsed = dec(snapshot.clearinghouseState.marginUsed);
   const unrealizedPnl = dec(snapshot.clearinghouseState.unrealizedPnl);
+  const accountSummary = buildAccountSummary(snapshot);
   const fills = snapshot.fills;
   const fundings = snapshot.fundings;
   const builderFeeDetected = fills.some((fill) => dec(fill.rawBuilderFee ?? "0").gt(0));
@@ -69,6 +71,28 @@ export function buildDashboard(snapshot: HyperliquidSnapshot, settings: UserSett
 
   return {
     summary: {
+      accountMode: snapshot.accountIdentity.mode,
+      accountModeLabel: accountModeLabel(snapshot.accountIdentity.mode),
+      totalEquity: money(accountSummary.totalEquity, { estimated: accountSummary.totalEquityEstimated }),
+      tradingEquity: money(accountSummary.tradingEquity, { estimated: accountSummary.tradingEquityEstimated }),
+      totalEquityVerified: accountSummary.totalEquityVerified,
+      totalEquitySource: accountSummary.totalEquitySource,
+      tradingEquitySource: accountSummary.tradingEquitySource,
+      totalEquityFormula: accountSummary.totalEquityFormula,
+      tradingEquityFormula: accountSummary.tradingEquityFormula,
+      totalEquityWarning: accountSummary.totalEquityWarning,
+      usdcTotal: money(accountSummary.usdcTotal),
+      usdcHeld: money(accountSummary.usdcHeld),
+      usdcAvailable: money(accountSummary.usdcAvailable),
+      openPositionsCount: snapshot.clearinghouseState.positions.length,
+      otherSpotAssets: accountSummary.otherSpotAssets.map((asset) => ({
+        coin: asset.coin,
+        total: money(asset.total),
+        held: money(asset.held),
+        available: money(asset.available),
+        entryNotional: asset.entryNotional ? money(asset.entryNotional, { estimated: true }) : undefined
+      })),
+      duplicateRiskWarning: accountSummary.duplicateRiskWarning,
       accountValue: money(accountValue),
       withdrawable: money(withdrawable),
       marginUsed: money(marginUsed),
@@ -109,7 +133,138 @@ export function buildDashboard(snapshot: HyperliquidSnapshot, settings: UserSett
     methodologyWarnings: collectWarnings(snapshot, builderFeeDetected, unknownLedger, audit.semantics.verified),
     builderFeeDetected,
     historyCoverage: snapshot.historyCoverage,
-    audit
+    audit,
+    diagnostics: {
+      environment: snapshot.network,
+      addressShort: shortAddress(snapshot.address),
+      userAbstractionRaw: snapshot.raw.userAbstraction,
+      userRoleRaw: snapshot.raw.userRole,
+      clearinghouseStateRaw: snapshot.raw.clearinghouseState,
+      spotClearinghouseStateRaw: snapshot.raw.spotClearinghouseState,
+      subAccountsRaw: snapshot.raw.subAccounts,
+      fieldsUsed: [
+        { label: "Tipo de cuenta", field: "raw.userAbstraction -> accountIdentity.mode" },
+        { label: "Total Equity", field: accountSummary.totalEquitySource },
+        { label: "Trading Equity", field: accountSummary.tradingEquitySource },
+        { label: "USDC total", field: "spotClearinghouseState.balances[coin=USDC].total" },
+        { label: "USDC retenido", field: "spotClearinghouseState.balances[coin=USDC].hold" },
+        { label: "USDC disponible", field: "spotClearinghouseState.balances[coin=USDC].total - hold" },
+        { label: "Margen usado", field: "clearinghouseState.marginUsed" },
+        { label: "Posiciones abiertas", field: "clearinghouseState.assetPositions" }
+      ],
+      formulas: [
+        { label: "Total Equity", formula: accountSummary.totalEquityFormula },
+        { label: "Trading Equity", formula: accountSummary.tradingEquityFormula },
+        { label: "USDC disponible", formula: "USDC total - USDC retenido" }
+      ],
+      duplicationWarning: accountSummary.duplicateRiskWarning
+    }
+  };
+}
+
+function buildAccountSummary(snapshot: HyperliquidSnapshot) {
+  const usdcBalance = snapshot.spotClearinghouseState.balances.find((balance) => balance.coin.toUpperCase() === "USDC");
+  const usdcTotal = dec(usdcBalance?.total ?? "0");
+  const usdcHeld = dec(usdcBalance?.hold ?? "0");
+  const usdcAvailable = usdcTotal.minus(usdcHeld);
+  const otherSpotAssets = snapshot.spotClearinghouseState.balances
+    .filter((balance) => balance.coin.toUpperCase() !== "USDC")
+    .map((balance) => {
+      const total = dec(balance.total);
+      const held = dec(balance.hold);
+      return {
+        coin: balance.coin,
+        total,
+        held,
+        available: total.minus(held),
+        entryNotional: balance.entryNtl ? dec(balance.entryNtl) : undefined
+      };
+    });
+  const otherSpotEntryNotional = otherSpotAssets.reduce((sum, balance) => sum.plus(balance.entryNotional ?? dec(0)), dec(0));
+  const otherAssetsPresent = otherSpotAssets.length > 0;
+  const clearinghouseValue = dec(snapshot.clearinghouseState.accountValue);
+  const duplicateRiskWarning =
+    snapshot.accountIdentity.mode === "standard"
+      ? "No se suma spot y perps automaticamente salvo cuando la lectura es inequívoca, para evitar doble contabilización."
+      : "No se suma clearinghouseState.accountValue al spot en cuentas unificadas para evitar doble contabilización.";
+
+  if (snapshot.accountIdentity.mode === "unifiedAccount" || snapshot.accountIdentity.mode === "portfolioMargin") {
+    return {
+      totalEquity: usdcTotal.plus(otherSpotEntryNotional),
+      tradingEquity: usdcTotal.plus(otherSpotEntryNotional),
+      totalEquityEstimated: otherAssetsPresent,
+      tradingEquityEstimated: otherAssetsPresent,
+      totalEquityVerified: !otherAssetsPresent,
+      totalEquitySource:
+        snapshot.accountIdentity.mode === "unifiedAccount"
+          ? "spotClearinghouseState.balances (cuenta unificada)"
+          : "spotClearinghouseState.balances (portfolio margin)",
+      tradingEquitySource: "spotClearinghouseState.balances",
+      totalEquityFormula: otherAssetsPresent ? "USDC total + suma(entryNtl de otros activos spot)" : "USDC total",
+      tradingEquityFormula: otherAssetsPresent ? "USDC total + suma(entryNtl de otros activos spot)" : "USDC total",
+      totalEquityWarning: otherAssetsPresent
+        ? "La equity incluye otros activos spot valorados con entryNtl y queda marcada como estimada."
+        : undefined,
+      usdcTotal,
+      usdcHeld,
+      usdcAvailable,
+      otherSpotAssets,
+      duplicateRiskWarning
+    };
+  }
+
+  if (snapshot.accountIdentity.mode === "standard") {
+    const onlyPerps = clearinghouseValue.gt(0) && usdcTotal.eq(0);
+    const onlySpot = clearinghouseValue.eq(0) && usdcTotal.gt(0) && !otherAssetsPresent;
+    const canCombine = onlyPerps || onlySpot;
+    return {
+      totalEquity: onlyPerps ? clearinghouseValue : onlySpot ? usdcTotal : dec(0),
+      tradingEquity: clearinghouseValue,
+      totalEquityEstimated: false,
+      tradingEquityEstimated: false,
+      totalEquityVerified: canCombine,
+      totalEquitySource: canCombine
+        ? onlyPerps
+          ? "clearinghouseState.marginSummary.accountValue"
+          : "spotClearinghouseState.balances[coin=USDC].total"
+        : "Separado: perps y spot sin combinar",
+      tradingEquitySource: "clearinghouseState.marginSummary.accountValue",
+      totalEquityFormula: canCombine
+        ? onlyPerps
+          ? "accountValue de perps"
+          : "USDC total spot"
+        : "No verificado: se muestran perps y spot por separado",
+      tradingEquityFormula: "clearinghouseState.accountValue",
+      totalEquityWarning: canCombine ? undefined : "Total combinado no verificado para evitar doble contabilización.",
+      usdcTotal,
+      usdcHeld,
+      usdcAvailable,
+      otherSpotAssets,
+      duplicateRiskWarning
+    };
+  }
+
+  const spotValid = usdcTotal.gt(0) || otherAssetsPresent;
+  const clearinghouseValid = clearinghouseValue.gt(0);
+  return {
+    totalEquity: dec(0),
+    tradingEquity: clearinghouseValid ? clearinghouseValue : usdcTotal.plus(otherSpotEntryNotional),
+    totalEquityEstimated: false,
+    tradingEquityEstimated: otherAssetsPresent,
+    totalEquityVerified: false,
+    totalEquitySource: "No verificado",
+    tradingEquitySource: clearinghouseValid ? "clearinghouseState.accountValue" : "spotClearinghouseState.balances",
+    totalEquityFormula: "No verificado: raw spot y raw perps se muestran por separado",
+    tradingEquityFormula: clearinghouseValid ? "clearinghouseState.accountValue" : "USDC total + suma(entryNtl spot)",
+    totalEquityWarning:
+      spotValid || clearinghouseValid
+        ? "Modo de cuenta desconocido. Se evita promover un total combinado hasta verificar la fuente correcta."
+        : "No hay una fuente verificada suficiente para el total.",
+    usdcTotal,
+    usdcHeld,
+    usdcAvailable,
+    otherSpotAssets,
+    duplicateRiskWarning
   };
 }
 
@@ -423,6 +578,23 @@ function normalizeMarginMode(value: string): string {
     return "Aislado";
   }
   return value;
+}
+
+function accountModeLabel(mode: AccountMode): string {
+  if (mode === "unifiedAccount") {
+    return "Unificada";
+  }
+  if (mode === "portfolioMargin") {
+    return "Portfolio Margin";
+  }
+  if (mode === "standard") {
+    return "Estandar";
+  }
+  return "Desconocida";
+}
+
+function shortAddress(address: string): string {
+  return address.length >= 10 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
 }
 
 function collectWarnings(
