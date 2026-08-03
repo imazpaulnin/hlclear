@@ -262,7 +262,7 @@ svg {
     var(--page-padding)
     calc(0.5rem + env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.35rem;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
   border-top: 1px solid var(--border);
@@ -556,6 +556,149 @@ details summary {
   cursor: pointer;
 }
 
+.trade-shell {
+  gap: 1rem;
+}
+
+.trade-asset-list,
+.trade-risk-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.trade-asset-card,
+.trade-metric-card,
+.trade-risk-row {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel-soft);
+}
+
+.trade-asset-card {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  padding: 0.9rem;
+}
+
+.trade-asset-card.selected {
+  border-color: color-mix(in srgb, #1d8fff 60%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #1d8fff 40%, transparent);
+}
+
+.trade-asset-meta {
+  display: grid;
+  gap: 0.18rem;
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.trade-action-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trade-action-grid.compact {
+  gap: 0.55rem;
+}
+
+.trade-side-button {
+  min-height: 4rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.trade-side-button.long.active {
+  background: color-mix(in srgb, var(--green) 24%, var(--panel-soft));
+  color: #d9ffef;
+}
+
+.trade-side-button.short.active {
+  background: color-mix(in srgb, var(--red) 24%, var(--panel-soft));
+  color: #ffe2e6;
+}
+
+.trade-side-button.neutral.active {
+  background: color-mix(in srgb, #1d8fff 22%, var(--panel-soft));
+}
+
+.trade-control-card {
+  gap: 0.65rem;
+}
+
+.trade-slider {
+  width: 100%;
+}
+
+.quick-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.quick-chip {
+  min-height: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 0.55rem 0.9rem;
+  font-weight: 700;
+}
+
+.quick-chip.active,
+.quick-chip-accent {
+  background: color-mix(in srgb, #1d8fff 18%, var(--panel-soft));
+}
+
+.trade-metric-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem;
+}
+
+.trade-metric-card strong {
+  font-size: 1rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.trade-break-even-card {
+  text-align: center;
+  gap: 0.2rem;
+}
+
+.trade-break-even-copy {
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.trade-break-even-value {
+  font-size: clamp(2rem, 10vw, 3rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.trade-risk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0.9rem;
+}
+
+.trade-continue-button {
+  min-height: 3.4rem;
+  font-size: 1rem;
+}
+
 @media (max-width: 47rem) {
   .grid-2,
   .status-grid:not(.compact-status-grid) {
@@ -623,7 +766,7 @@ details summary {
   }
 
   .nav-button span:last-child {
-    font-size: 0.72rem;
+    font-size: 0.66rem;
   }
 }
 

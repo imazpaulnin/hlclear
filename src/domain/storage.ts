@@ -7,7 +7,8 @@ export const defaultSettings: UserSettings = {
   network: "testnet",
   closeMode: "taker",
   slippageBps: "5",
-  toleranceUsdc: "0.01"
+  toleranceUsdc: "0.01",
+  maxOrderMarginUsdc: "250"
 };
 
 export function loadStoredState(): StoredAppState {

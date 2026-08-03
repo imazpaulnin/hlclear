@@ -12,6 +12,7 @@ export interface UserSettings {
   closeMode: CloseMode;
   slippageBps: string;
   toleranceUsdc: string;
+  maxOrderMarginUsdc: string;
 }
 
 export interface StoredAppState {
@@ -120,6 +121,7 @@ export interface MarginTable {
 export interface MarketContext {
   coin: string;
   markPrice: string;
+  prevDayPrice?: string;
   oraclePrice?: string;
   midPrice?: string;
   fundingRate?: string;

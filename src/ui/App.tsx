@@ -6,6 +6,7 @@ import { buildDashboard } from "../domain/dashboard";
 import { createEmptyState, loadStoredState, persistState } from "../domain/storage";
 import { useWalletConnection } from "../wallet/useWalletConnection";
 import { walletStatusLabel } from "../wallet/walletUtils";
+import { TradeTab } from "./TradeTab";
 import type {
   DashboardPresentation,
   Fill,
@@ -17,11 +18,12 @@ import type {
   UserSettings
 } from "../domain/types";
 
-type TabKey = "summary" | "positions" | "history" | "more";
+type TabKey = "summary" | "trade" | "positions" | "history" | "more";
 type MorePanel = "menu" | "movements" | "settings" | "wallet" | "methodology" | "audit" | "api";
 
-const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "positions" | "history" | "more" }> = [
+const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "trade" | "positions" | "history" | "more" }> = [
   { key: "summary", label: "Resumen", icon: "summary" },
+  { key: "trade", label: "Operar", icon: "trade" },
   { key: "positions", label: "Posiciones", icon: "positions" },
   { key: "history", label: "Historial", icon: "history" },
   { key: "more", label: "Mas", icon: "more" }
@@ -200,6 +202,7 @@ export function App() {
           )}
 
           {tab === "summary" && <SummaryTab dashboard={dashboard} state={state} syncState={syncState} onSync={() => void sync()} />}
+          {tab === "trade" && <TradeTab snapshot={activeSnapshot} settings={state.settings} onSettingsChange={updateSettings} />}
           {tab === "positions" && <PositionsTab dashboard={dashboard} onOpenPosition={setSelectedPosition} />}
           {tab === "history" && <HistoryTab dashboard={dashboard} />}
           {tab === "more" && (
@@ -277,7 +280,7 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
   if (requestedTab === "api") {
     return { tab: "more", morePanel: "api" };
   }
-  if (requestedTab === "summary" || requestedTab === "positions" || requestedTab === "history" || requestedTab === "more") {
+  if (requestedTab === "summary" || requestedTab === "trade" || requestedTab === "positions" || requestedTab === "history" || requestedTab === "more") {
     return {
       tab: requestedTab,
       morePanel: requestedTab === "more" && isMorePanel(requestedMore) ? requestedMore : "menu"
@@ -782,6 +785,18 @@ function MoreTab({
                   <input id="tolerance" type="number" step="0.01" value={settings.toleranceUsdc} onChange={(event) => onSettingsChange({ toleranceUsdc: event.target.value })} />
                 </div>
 
+                <div className="field">
+                  <label htmlFor="riskLimit">Limite de riesgo por orden (USDC)</label>
+                  <input
+                    id="riskLimit"
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={settings.maxOrderMarginUsdc}
+                    onChange={(event) => onSettingsChange({ maxOrderMarginUsdc: event.target.value })}
+                  />
+                </div>
+
                 <div className="status-grid compact-status-grid">
                   <InfoTile label="API" value={snapshot?.apiHealth ?? "Sin consultar"} />
                   <InfoTile label="CORS" value={corsStatus} />
@@ -1195,11 +1210,18 @@ function InfoTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function NavIcon({ icon }: { icon: "summary" | "positions" | "history" | "more" }) {
+function NavIcon({ icon }: { icon: "summary" | "trade" | "positions" | "history" | "more" }) {
   if (icon === "summary") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 5h16M4 12h16M4 19h10" />
+      </svg>
+    );
+  }
+  if (icon === "trade") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 17 11 7l2 6 5-6M5 19h14" />
       </svg>
     );
   }

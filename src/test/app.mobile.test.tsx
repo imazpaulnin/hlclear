@@ -21,10 +21,11 @@ describe("mobile-first shell", () => {
     });
   });
 
-  it("renders four primary navigation items without legacy abbreviations", () => {
+  it("renders five primary navigation items without legacy abbreviations", () => {
     render(<App />);
 
     expect(screen.getByRole("button", { name: /Resumen/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Operar/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Posiciones/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Historial/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Mas$/i })).toBeInTheDocument();
@@ -33,6 +34,15 @@ describe("mobile-first shell", () => {
     expect(screen.queryByText("PS")).not.toBeInTheDocument();
     expect(screen.queryByText("HS")).not.toBeInTheDocument();
     expect(screen.queryByText("MV")).not.toBeInTheDocument();
+  });
+
+  it("opens the trade preparation tab", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Operar/i }));
+
+    expect(screen.getByRole("heading", { name: /Operar/i })).toBeInTheDocument();
+    expect(screen.getByText(/Preparacion transparente/i)).toBeInTheDocument();
   });
 
   it("groups secondary destinations under Mas", () => {

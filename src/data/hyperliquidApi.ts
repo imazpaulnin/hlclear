@@ -488,6 +488,7 @@ function normalizeMarketContexts(input: unknown): MarketContext[] {
     return {
       coin: String(record.coin ?? market.name ?? `Asset ${index}`),
       markPrice: String(record.markPx ?? "0"),
+      prevDayPrice: record.prevDayPx ? String(record.prevDayPx) : undefined,
       oraclePrice: record.oraclePx ? String(record.oraclePx) : undefined,
       midPrice: record.midPx ? String(record.midPx) : undefined,
       fundingRate: record.funding ? String(record.funding) : undefined,
