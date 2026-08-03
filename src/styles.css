@@ -560,6 +560,12 @@ details summary {
   gap: 1rem;
 }
 
+.trade-env-switch {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .trade-asset-list,
 .trade-risk-list {
   display: grid;
@@ -697,6 +703,11 @@ details summary {
 .trade-continue-button {
   min-height: 3.4rem;
   font-size: 1rem;
+}
+
+.trade-confirmation-modal {
+  max-width: 36rem;
+  margin: 0 auto;
 }
 
 @media (max-width: 47rem) {

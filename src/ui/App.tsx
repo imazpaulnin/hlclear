@@ -202,7 +202,18 @@ export function App() {
           )}
 
           {tab === "summary" && <SummaryTab dashboard={dashboard} state={state} syncState={syncState} onSync={() => void sync()} />}
-          {tab === "trade" && <TradeTab snapshot={activeSnapshot} settings={state.settings} onSettingsChange={updateSettings} />}
+          {tab === "trade" && (
+            <TradeTab
+              snapshot={activeSnapshot}
+              settings={state.settings}
+              onSettingsChange={updateSettings}
+              walletAddress={wallet.state.address}
+              walletNetworkLabel={wallet.state.networkLabel}
+              auditAddress={state.settings.address}
+              auditAddressMatches={wallet.auditAddressMatches}
+              walletProvider={wallet.connectedProvider}
+            />
+          )}
           {tab === "positions" && <PositionsTab dashboard={dashboard} onOpenPosition={setSelectedPosition} />}
           {tab === "history" && <HistoryTab dashboard={dashboard} />}
           {tab === "more" && (

@@ -15,12 +15,14 @@
     "pages:base": "node scripts/resolve-base.mjs"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "^0.33.3",
     "@walletconnect/jsonrpc-utils": "^1.0.8",
     "@walletconnect/universal-provider": "^2.23.10",
     "decimal.js": "^10.5.0",
     "events": "^3.3.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "viem": "^2.55.10"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.8.0",

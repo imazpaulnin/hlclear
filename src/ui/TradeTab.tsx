@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Decimal, dec, formatNumber } from "../domain/decimal";
+import { dec, formatNumber } from "../domain/decimal";
 import { buildTradeAssetQuotes, clampTradeLeverage, getAdverseMoveLabel, prepareTrade, resolveMaxMarginUsdc, tradeSimulationOptions } from "../domain/trade/prepareTrade";
 import { resolveTradeFeeRate } from "../domain/trade/fees";
 import type { TradeAssetQuote, TradeExecutionMode, TradeSide } from "../domain/tradeTypes";
-import type { HyperliquidSnapshot, UserSettings, UserFees } from "../domain/types";
+import type { HyperliquidSnapshot, UserFees, UserSettings } from "../domain/types";
+import type { Eip1193Provider } from "../wallet/types";
+import { buildConfirmationSummary } from "../trading/testnetTradingService";
+import type { MarginMode } from "../trading/types";
+import { useTestnetTrading } from "../trading/useTestnetTrading";
 
 const QUICK_MARGINS = ["25", "50", "100", "250", "500"];
 const FAVORITE_COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP"];
@@ -11,11 +15,21 @@ const FAVORITE_COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP"];
 export function TradeTab({
   snapshot,
   settings,
-  onSettingsChange
+  onSettingsChange,
+  walletAddress,
+  walletNetworkLabel,
+  auditAddress,
+  auditAddressMatches,
+  walletProvider
 }: {
   snapshot?: HyperliquidSnapshot;
   settings: UserSettings;
   onSettingsChange: (patch: Partial<UserSettings>) => void;
+  walletAddress?: string;
+  walletNetworkLabel: string;
+  auditAddress: string;
+  auditAddressMatches: boolean | undefined;
+  walletProvider: Eip1193Provider | null;
 }) {
   const quotes = useMemo(
     () =>
@@ -30,10 +44,20 @@ export function TradeTab({
   const [selectedCoin, setSelectedCoin] = useState<string>(quotes[0]?.coin ?? "BTC");
   const [side, setSide] = useState<TradeSide>("long");
   const [executionMode, setExecutionMode] = useState<TradeExecutionMode>("taker");
+  const [marginMode, setMarginMode] = useState<MarginMode>("cross");
   const [marginUsdc, setMarginUsdc] = useState("50");
   const [leverage, setLeverage] = useState("5");
   const [simulationIndex, setSimulationIndex] = useState(3);
   const [showValidation, setShowValidation] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  const trading = useTestnetTrading({
+    provider: walletProvider,
+    walletAddress,
+    auditAddress,
+    auditAddressMatches,
+    snapshot
+  });
 
   useEffect(() => {
     if (!quotes.some((quote) => quote.coin === selectedCoin) && quotes[0]) {
@@ -85,6 +109,35 @@ export function TradeTab({
     riskLimitUsdc: settings.maxOrderMarginUsdc,
     availableUsdc
   });
+  const assetIndex = snapshot?.universe.findIndex((asset) => asset.name === selectedAsset?.coin) ?? -1;
+  const confirmation = trade ? buildConfirmationSummary({ prepared: trade, marginMode }) : undefined;
+
+  async function handleContinue() {
+    setShowValidation(true);
+    if (!trade || trade.validationErrors.length > 0) {
+      return;
+    }
+    setShowConfirmation(true);
+  }
+
+  async function handleConfirmInWallet() {
+    if (!trade || assetIndex < 0) {
+      trading.setActionError("No se pudo resolver el activo en Hyperliquid Testnet.");
+      return;
+    }
+
+    const result = await trading.submit({
+      prepared: trade,
+      assetIndex,
+      marginMode,
+      slippageBps: settings.slippageBps,
+      leverage: trade.leverage
+    });
+
+    if (result) {
+      setShowConfirmation(false);
+    }
+  }
 
   return (
     <section className="stack">
@@ -92,10 +145,84 @@ export function TradeTab({
         <div className="section-title section-title-wrap">
           <div>
             <h2>Operar</h2>
-            <div className="caption">Preparacion transparente. Sin firma. Sin envio. Sin /exchange.</div>
+            <div className="caption">Ejecucion manual en navegador. Solo Testnet en esta fase.</div>
           </div>
-          <div className="pill">Modo preparacion</div>
+          <div className={`pill ${trading.tradingEnvironment === "testnet" ? "" : "warning"}`}>
+            {trading.tradingEnvironment === "testnet" ? "TESTNET habilitado" : "MAINNET bloqueado"}
+          </div>
         </div>
+
+        <div className="trade-env-switch">
+          <button
+            className={`quick-chip ${trading.tradingEnvironment === "testnet" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              setShowConfirmation(false);
+              trading.setTradingEnvironment("testnet");
+            }}
+          >
+            TESTNET
+          </button>
+          <button
+            className={`quick-chip ${trading.tradingEnvironment === "mainnet" ? "active" : ""}`}
+            type="button"
+            onClick={() => {
+              setShowConfirmation(false);
+              trading.setTradingEnvironment("mainnet");
+            }}
+          >
+            MAINNET
+          </button>
+        </div>
+
+        {trading.tradingEnvironment === "mainnet" && (
+          <div className="card danger" role="alert">
+            <strong>La operativa real todavia no esta habilitada.</strong>
+            <div>Mainnet permanece bloqueado durante la Fase 2.3.</div>
+          </div>
+        )}
+
+        <div className="card compact-card stack dense-stack">
+          <h2>Wallet conectada</h2>
+          <Line label="Direccion" value={walletAddress ? shortAddress(walletAddress) : "Sin conectar"} />
+          <Line label="Red" value={walletNetworkLabel} />
+          <Line label="Estado" value={walletAddress ? "Conectada" : "No conectada"} />
+          <Line label="Direccion auditada" value={auditAddress ? shortAddress(auditAddress) : "Sin configurar"} />
+          <Line label="Coincidencia" value={auditAddressMatches === undefined ? "Pendiente" : auditAddressMatches ? "Coincide" : "No coincide"} />
+        </div>
+
+        {!trading.eligibility.allowed && (
+          <div className="card danger" role="alert">
+            <strong>Envio bloqueado</strong>
+            <div>{trading.eligibility.reason}</div>
+          </div>
+        )}
+
+        {trading.actionError && (
+          <div className="card danger" role="alert">
+            <strong>Error de operativa</strong>
+            <div>{trading.actionError}</div>
+          </div>
+        )}
+
+        {trading.liveSnapshot.connection !== "idle" && (
+          <div className="card compact-card stack dense-stack">
+            <div className="section-title section-title-wrap">
+              <h2>Estado Testnet</h2>
+              <OutcomeBadge
+                label={
+                  trading.liveSnapshot.connection === "ready"
+                    ? "Conectado"
+                    : trading.liveSnapshot.connection === "connecting"
+                      ? "Conectando"
+                      : "Error"
+                }
+                color={trading.liveSnapshot.connection === "ready" ? "green" : trading.liveSnapshot.connection === "connecting" ? "orange" : "red"}
+              />
+            </div>
+            <div className="caption">{trading.liveSnapshot.connectionMessage ?? "Suscripciones de posicion, fills, funding y ordenes activas."}</div>
+          </div>
+        )}
 
         {!snapshot ? (
           <div className="card">
@@ -160,6 +287,23 @@ export function TradeTab({
               </button>
               <button className={`trade-side-button ${side === "short" ? "short active" : "short"}`} type="button" onClick={() => setSide("short")}>
                 SHORT
+              </button>
+            </div>
+
+            <div className="trade-action-grid compact">
+              <button
+                className={`trade-side-button neutral ${marginMode === "cross" ? "active" : ""}`}
+                type="button"
+                onClick={() => setMarginMode("cross")}
+              >
+                CRUZADO
+              </button>
+              <button
+                className={`trade-side-button neutral ${marginMode === "isolated" ? "active" : ""}`}
+                type="button"
+                onClick={() => setMarginMode("isolated")}
+              >
+                AISLADO
               </button>
             </div>
 
@@ -343,7 +487,7 @@ export function TradeTab({
 
                 <div className="card compact-card stack dense-stack">
                   <h2>Resumen final</h2>
-                  <Line label={`${side.toUpperCase()} ${trade.asset.coin}`} value={executionMode.toUpperCase()} />
+                  <Line label={`${side.toUpperCase()} ${trade.asset.coin}`} value={`${executionMode.toUpperCase()} · ${marginMode.toUpperCase()}`} />
                   <Line label="Margen" value={`${formatMoneyCompact(trade.marginUsdc)} USDC`} />
                   <Line label="Apalancamiento" value={`${formatMoneyCompact(trade.leverage)}x`} />
                   <Line label="Valor nocional" value={`${formatMoneyCompact(trade.notionalUsdc)} USDC`} />
@@ -354,7 +498,7 @@ export function TradeTab({
                   <Line label="Break-even" value={formatPctAbs(trade.breakEvenMovePct)} />
                   <Line
                     label="Liquidacion"
-                    value={trade.liquidationReliable && trade.liquidationPrice ? formatPrice(trade.liquidationPrice) : "No disponible"}
+                    value={trade.liquidationReliable && trade.liquidationPrice ? "Estimada" : "No disponible"}
                   />
                   {trade.finalScenarios.map((scenario) => (
                     <Line
@@ -372,13 +516,7 @@ export function TradeTab({
                   </div>
                 )}
 
-                {showValidation && trade.validationErrors.length === 0 && (
-                  <div className="card" role="status">
-                    Preparacion valida. La siguiente fase podra conectar firma local y confirmacion explicita.
-                  </div>
-                )}
-
-                <button className="button full-width trade-continue-button" type="button" onClick={() => setShowValidation(true)}>
+                <button className="button full-width trade-continue-button" type="button" onClick={() => void handleContinue()}>
                   CONTINUAR
                 </button>
               </>
@@ -401,9 +539,152 @@ export function TradeTab({
                 />
               </div>
             </div>
+
+            {trading.liveSnapshot.latestOrderStatus && (
+              <div className="card compact-card stack dense-stack">
+                <div className="section-title section-title-wrap">
+                  <h2>Ultima respuesta</h2>
+                  <OutcomeBadge label={trading.liveSnapshot.latestOrderStatus.phase} color={statusColor(trading.liveSnapshot.latestOrderStatus.phase)} />
+                </div>
+                <Line label="Estado" value={trading.liveSnapshot.latestOrderStatus.summary} />
+                {trading.liveSnapshot.latestOrderStatus.averagePrice && (
+                  <Line label="Precio real" value={formatPrice(trading.liveSnapshot.latestOrderStatus.averagePrice)} />
+                )}
+                {trading.liveSnapshot.latestOrderStatus.filledSize && (
+                  <Line label="Cantidad ejecutada" value={trading.liveSnapshot.latestOrderStatus.filledSize} />
+                )}
+              </div>
+            )}
+
+            <div className="card compact-card stack dense-stack">
+              <div className="section-title section-title-wrap">
+                <h2>Posiciones Testnet</h2>
+                <button className="button secondary compact-button" type="button" onClick={() => void trading.cancelAll()} disabled={trading.submitting}>
+                  Cancelar todas
+                </button>
+              </div>
+              {trading.liveSnapshot.positions.length === 0 ? (
+                <div className="caption">No hay posiciones abiertas en Testnet.</div>
+              ) : (
+                trading.liveSnapshot.positions.map((position) => (
+                  <div className="card compact-card stack dense-stack" key={`${position.coin}-${position.side}`}>
+                    <div className="section-title section-title-wrap">
+                      <h2>{position.coin} · {position.side === "long" ? "LONG" : "SHORT"}</h2>
+                      <OutcomeBadge label={position.trafficLight.label} color={position.trafficLight.color} />
+                    </div>
+                    <div className="grid-2">
+                      <TradeMetric label="Beneficio bruto" value={`${formatSignedMoney(position.unrealizedPnl)} USDC`} />
+                      <TradeMetric label="Beneficio neto" value={`${formatSignedMoney(position.netPnl)} USDC`} />
+                      <TradeMetric label="Funding" value={`${formatSignedMoney(position.fundingSinceOpen)} USDC`} />
+                      <TradeMetric label="Comisiones" value={`${formatMoneyCompact(position.feeSinceOpen)} USDC`} />
+                      <TradeMetric label="Break-even" value={position.breakEvenPrice ? formatPrice(position.breakEvenPrice) : "N/D"} />
+                      <TradeMetric label="Liquidacion" value={position.liquidationPrice ? formatPrice(position.liquidationPrice) : "N/D"} />
+                    </div>
+                    <div className="quick-chip-row">
+                      {[25, 50, 75, 100].map((percentage) => (
+                        <button
+                          key={percentage}
+                          className="quick-chip"
+                          type="button"
+                          disabled={trading.submitting}
+                          onClick={() =>
+                            void trading.closeOpenPosition(position, {
+                              coin: position.coin,
+                              assetIndex: snapshot.universe.findIndex((asset) => asset.name === position.coin),
+                              percentage: percentage as 25 | 50 | 75 | 100,
+                              currentPrice: selectedAsset?.currentPrice ?? position.markPrice ?? position.entryPrice,
+                              slippageBps: settings.slippageBps
+                            })
+                          }
+                        >
+                          Cerrar {percentage}%
+                        </button>
+                      ))}
+                    </div>
+                    <div className="caption">Reduce Only activo en todos los cierres parciales de Testnet.</div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="card compact-card stack dense-stack">
+              <h2>Ordenes abiertas Testnet</h2>
+              {trading.liveSnapshot.openOrders.length === 0 ? (
+                <div className="caption">No hay ordenes abiertas en Testnet.</div>
+              ) : (
+                trading.liveSnapshot.openOrders.map((order) => (
+                  <div className="row-card compact-row" key={`${order.coin}-${order.orderId}`}>
+                    <div className="row-top">
+                      <strong>{order.coin} · {order.side === "long" ? "LONG" : "SHORT"}</strong>
+                      <button
+                        className="button secondary compact-button"
+                        type="button"
+                        disabled={trading.submitting}
+                        onClick={() => void trading.cancelOrder(snapshot.universe.findIndex((asset) => asset.name === order.coin), order.orderId)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    <div className="trade-asset-meta">
+                      <span>Precio {formatPrice(order.limitPrice)}</span>
+                      <span>Size {order.size}</span>
+                      <span>{order.reduceOnly ? "Reduce Only" : "Apertura"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </>
         )}
       </div>
+
+      {showConfirmation && trade && confirmation && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="trade-confirmation-title">
+          <div className="modal stack trade-confirmation-modal">
+            <div className="section-title section-title-wrap">
+              <h2 id="trade-confirmation-title">Confirmar en wallet</h2>
+              <button className="button secondary compact-button" type="button" onClick={() => setShowConfirmation(false)}>
+                Cerrar
+              </button>
+            </div>
+            <div className="card compact-card stack dense-stack">
+              <div className="section-title section-title-wrap">
+                <h2>{confirmation.title}</h2>
+                <OutcomeBadge label={trade.simulated.status.label} color={trade.simulated.status.color} />
+              </div>
+              <Line label="Precio" value={formatPrice(confirmation.estimatedEntryPrice)} />
+              <Line label="Margen" value={`${formatMoneyCompact(confirmation.marginUsdc)} USDC`} />
+              <Line label="Apalancamiento" value={`${formatMoneyCompact(confirmation.leverage)}x · ${confirmation.marginMode.toUpperCase()}`} />
+              <Line label="Valor nocional" value={`${formatMoneyCompact(confirmation.notionalUsdc)} USDC`} />
+              <Line label="Fee entrada" value={`${formatMoneyCompact(confirmation.entryFeeUsdc)} USDC`} />
+              <Line label="Fee salida" value={`${formatMoneyCompact(confirmation.exitFeeUsdc)} USDC`} />
+              <Line label="Funding" value={`${formatSignedMoney(confirmation.fundingEstimateUsdc)} USDC`} />
+              <Line label="Slippage" value={`${formatMoneyCompact(confirmation.slippageCostUsdc)} USDC`} />
+              <Line label="Break-even" value={`${formatPrice(confirmation.breakEvenPrice)} · ${formatPctAbs(confirmation.breakEvenMovePct)}`} />
+              <Line label="Liquidacion" value={confirmation.liquidationPrice ? formatPrice(confirmation.liquidationPrice) : "No disponible"} />
+              {confirmation.scenarios.map((scenario) => (
+                <Line key={scenario.movePct} label={`Beneficio estimado ${signedMoveLabel(scenario.movePct)}`} value={`${formatSignedMoney(scenario.netPnl)} USDC`} />
+              ))}
+            </div>
+
+            {!trading.eligibility.allowed && (
+              <div className="card danger" role="alert">
+                <strong>Envio bloqueado</strong>
+                <div>{trading.eligibility.reason}</div>
+              </div>
+            )}
+
+            <button
+              className="button full-width trade-continue-button"
+              type="button"
+              disabled={!trading.eligibility.allowed || trading.submitting}
+              onClick={() => void handleConfirmInWallet()}
+            >
+              {trading.submitting ? "Esperando wallet..." : "CONFIRMAR EN WALLET"}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -481,6 +762,23 @@ function classNameForChange(value: string | undefined): string {
     return "subtle";
   }
   return dec(value).gt(0) ? "success" : dec(value).lt(0) ? "danger" : "subtle";
+}
+
+function statusColor(status: string): "red" | "orange" | "green" | "gray" {
+  if (status === "ejecutada" || status === "aceptada") {
+    return "green";
+  }
+  if (status === "pendiente" || status === "parcial") {
+    return "orange";
+  }
+  if (status === "cancelada") {
+    return "gray";
+  }
+  return "red";
+}
+
+function shortAddress(address: string): string {
+  return address.length >= 10 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address;
 }
 
 function TradeMetric({ label, value }: { label: string; value: string }) {

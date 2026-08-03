@@ -10,6 +10,7 @@ type UseWalletConnectionResult = {
   availableWallets: WalletOption[];
   auditAddressMatches: boolean | undefined;
   mismatchWarning: string | undefined;
+  connectedProvider: Eip1193Provider | null;
   connect: () => Promise<void>;
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
   disconnect: () => Promise<void>;
@@ -215,6 +216,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     availableWallets,
     auditAddressMatches,
     mismatchWarning,
+    connectedProvider: connectedProviderRef.current,
     connect,
     connectWith,
     disconnect

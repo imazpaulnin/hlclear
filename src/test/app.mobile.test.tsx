@@ -42,7 +42,8 @@ describe("mobile-first shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Operar/i }));
 
     expect(screen.getByRole("heading", { name: /Operar/i })).toBeInTheDocument();
-    expect(screen.getByText(/Preparacion transparente/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ejecucion manual en navegador/i)).toBeInTheDocument();
+    expect(screen.getByText(/TESTNET habilitado/i)).toBeInTheDocument();
   });
 
   it("groups secondary destinations under Mas", () => {
