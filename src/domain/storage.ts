@@ -22,7 +22,7 @@ export function loadStoredState(): StoredAppState {
         ...defaultSettings,
         ...parsed.settings
       },
-      snapshots: parsed.snapshots ?? parsed.snapshot ?? {}
+      snapshots: sanitizeSnapshots(parsed.snapshots ?? parsed.snapshot ?? {})
     };
   } catch {
     return createEmptyState();
@@ -38,4 +38,45 @@ export function createEmptyState(): StoredAppState {
     settings: defaultSettings,
     snapshots: {}
   };
+}
+
+function sanitizeSnapshots(value: unknown): StoredAppState["snapshots"] {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const snapshots = value as Record<string, unknown>;
+  const result: NonNullable<StoredAppState["snapshots"]> = {};
+
+  for (const network of ["testnet", "mainnet"] as const) {
+    const snapshot = snapshots[network];
+    if (isCompatibleSnapshot(snapshot)) {
+      result[network] = snapshot as NonNullable<StoredAppState["snapshots"]>[typeof network];
+    }
+  }
+
+  return result;
+}
+
+function isCompatibleSnapshot(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const snapshot = value as Record<string, unknown>;
+  const accountIdentity = asRecord(snapshot.accountIdentity);
+  const clearinghouseState = asRecord(snapshot.clearinghouseState);
+  const spotClearinghouseState = asRecord(snapshot.spotClearinghouseState);
+
+  return (
+    typeof snapshot.address === "string" &&
+    typeof snapshot.network === "string" &&
+    Array.isArray(clearinghouseState.positions) &&
+    Array.isArray(spotClearinghouseState.balances) &&
+    typeof accountIdentity.mode === "string"
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
