@@ -590,6 +590,13 @@ function makeSnapshot(overrides: {
       funding: {},
       ledger: {}
     },
+    infoRequests: {
+      clearinghouseState: [],
+      spotClearinghouseState: [],
+      userFillsByTime: [],
+      userFunding: [],
+      userNonFundingLedgerUpdates: []
+    },
     accountIdentity: {
       userAbstractionRaw: overrides.userAbstractionRaw ?? overrides.accountMode ?? "disabled",
       userAbstraction: normalizeModeToAbstraction(overrides.accountMode),

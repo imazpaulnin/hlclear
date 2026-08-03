@@ -8,6 +8,7 @@ import type {
   FundingEntry,
   HistoryCoverage,
   HyperliquidSnapshot,
+  InfoRequestTrace,
   LedgerDelta,
   LedgerUpdate,
   MarginTable,
@@ -42,8 +43,8 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
   const [userAbstractionResult, userRoleResult, clearinghouseResult, spotResult] = await Promise.all([
     postSafe(baseUrl, { type: "userAbstraction", user: address }),
     postSafe(baseUrl, { type: "userRole", user: address }),
-    postSafe(baseUrl, { type: "clearinghouseState", user: address }),
-    postSafe(baseUrl, { type: "spotClearinghouseState", user: address })
+    postSafe(baseUrl, { type: "clearinghouseState", user: address }, true),
+    postSafe(baseUrl, { type: "spotClearinghouseState", user: address }, true)
   ]);
 
   const userRoleRaw = userRoleResult.ok ? userRoleResult.data : { error: userRoleResult.error };
@@ -70,9 +71,9 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
     fetchPaginated(baseUrl, "userNonFundingLedgerUpdates", address, start, end)
   ]);
 
-  const fills = dedupeFills(fillsPage.items.flatMap(normalizeFills));
-  const fundings = dedupeById(fundingPage.items.flatMap(normalizeFundings));
-  const ledgerUpdates = dedupeById(ledgerPage.items.flatMap(normalizeLedger));
+  const fills = dedupeFills(flatMapArray(fillsPage.items, normalizeFills));
+  const fundings = dedupeById(flatMapArray(fundingPage.items, normalizeFundings));
+  const ledgerUpdates = dedupeById(flatMapArray(ledgerPage.items, normalizeLedger));
 
   return {
     fetchedAt,
@@ -93,6 +94,13 @@ export async function fetchSnapshot(address: string, network: Network): Promise<
       fills: fillsPage.raw,
       funding: fundingPage.raw,
       ledger: ledgerPage.raw
+    },
+    infoRequests: {
+      clearinghouseState: clearinghouseResult.trace ? [clearinghouseResult.trace] : [],
+      spotClearinghouseState: spotResult.trace ? [spotResult.trace] : [],
+      userFillsByTime: fillsPage.traces,
+      userFunding: fundingPage.traces,
+      userNonFundingLedgerUpdates: ledgerPage.traces
     },
     accountIdentity: normalizeAccountIdentity(
       userAbstractionResult.ok ? userAbstractionResult.data : undefined,
@@ -133,14 +141,19 @@ export function getReadOnlyPayloads(address: string, endTime: number): Array<Rec
 
 async function postSafe(
   baseUrl: string,
-  body: Record<string, unknown>
-): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
+  body: Record<string, unknown>,
+  captureTrace = false
+): Promise<{ ok: true; data: unknown; trace?: InfoRequestTrace } | { ok: false; error: string; trace?: InfoRequestTrace }> {
   try {
-    return { ok: true, data: await post(baseUrl, body) };
+    const data = await post(baseUrl, body);
+    return { ok: true, data, trace: captureTrace ? { type: String(body.type ?? ""), request: body, response: data } : undefined };
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : `Error al consultar ${String(body.type)}`
+      error: error instanceof Error ? error.message : `Error al consultar ${String(body.type)}`,
+      trace: captureTrace
+        ? { type: String(body.type ?? ""), request: body, response: { error: error instanceof Error ? error.message : "Error desconocido" } }
+        : undefined
     };
   }
 }
@@ -169,6 +182,7 @@ async function fetchPaginated(
 ): Promise<{
   items: unknown[];
   raw: unknown[];
+  traces: InfoRequestTrace[];
   actualEarliestTimestamp?: number;
   actualLatestTimestamp?: number;
   reachedApiLimit: boolean;
@@ -179,16 +193,19 @@ async function fetchPaginated(
   let cursor = startTime;
   const items: unknown[] = [];
   const raw: unknown[] = [];
+  const traces: InfoRequestTrace[] = [];
   let reachedApiLimit = false;
   let reachedInternalPageLimit = false;
 
   for (let page = 0; page < INTERNAL_PAGE_LIMIT; page += 1) {
-    const payload = (await post(baseUrl, {
+    const request = {
       type,
       user: address,
       startTime: cursor,
       endTime
-    })) as unknown[];
+    };
+    const payload = (await post(baseUrl, request)) as unknown[];
+    traces.push({ type, request, response: payload });
 
     raw.push(...payload);
     items.push(...payload);
@@ -243,6 +260,7 @@ async function fetchPaginated(
   return {
     items,
     raw,
+    traces,
     actualEarliestTimestamp,
     actualLatestTimestamp,
     reachedApiLimit,
@@ -420,7 +438,7 @@ function normalizePortfolio(input: unknown): PortfolioPeriod[] {
     return [];
   }
 
-  return input.flatMap((entry) => {
+  return flatMapArray(input, (entry) => {
     if (!Array.isArray(entry) || entry.length !== 2) {
       return [];
     }
@@ -506,7 +524,7 @@ function normalizeMarginTables(input: unknown): MarginTable[] {
   const source = asRecord(input[0]);
   const rawTables = Array.isArray(source.marginTables) ? source.marginTables : [];
 
-  return rawTables.flatMap((entry) => {
+  return flatMapArray(rawTables, (entry) => {
     if (!Array.isArray(entry) || entry.length !== 2) {
       return [];
     }
@@ -750,11 +768,18 @@ function dedupeById<T extends { id: string }>(rows: T[]): T[] {
   });
 }
 
+function flatMapArray<T, TResult>(input: T[], project: (entry: T) => TResult[]): TResult[] {
+  return input.reduce<TResult[]>((result, entry) => {
+    result.push(...project(entry));
+    return result;
+  }, []);
+}
+
 function toPoints(input: unknown): PortfolioPeriod["accountValueHistory"] {
   if (!Array.isArray(input)) {
     return [];
   }
-  return input.flatMap((entry) => {
+  return flatMapArray(input, (entry) => {
     if (!Array.isArray(entry) || entry.length !== 2) {
       return [];
     }

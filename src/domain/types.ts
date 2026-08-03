@@ -19,6 +19,12 @@ export interface StoredAppState {
   snapshots?: Partial<Record<Network, HyperliquidSnapshot>>;
 }
 
+export interface InfoRequestTrace {
+  type: string;
+  request: Record<string, unknown>;
+  response: unknown;
+}
+
 export interface MoneyValue {
   raw: string;
   exact: Decimal;
@@ -536,6 +542,13 @@ export interface HyperliquidSnapshot {
     fills: unknown;
     funding: unknown;
     ledger: unknown;
+  };
+  infoRequests: {
+    clearinghouseState: InfoRequestTrace[];
+    spotClearinghouseState: InfoRequestTrace[];
+    userFillsByTime: InfoRequestTrace[];
+    userFunding: InfoRequestTrace[];
+    userNonFundingLedgerUpdates: InfoRequestTrace[];
   };
   accountIdentity: AccountIdentity;
   clearinghouseState: ClearinghouseState;

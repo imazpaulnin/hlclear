@@ -16,7 +16,7 @@ import type {
 } from "../domain/types";
 
 type TabKey = "summary" | "positions" | "history" | "more";
-type MorePanel = "menu" | "movements" | "settings" | "methodology" | "audit";
+type MorePanel = "menu" | "movements" | "settings" | "methodology" | "audit" | "api";
 
 const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "positions" | "history" | "more" }> = [
   { key: "summary", label: "Resumen", icon: "summary" },
@@ -40,12 +40,23 @@ export function App() {
 
   const activeSnapshot = state.snapshots?.[state.settings.network];
 
-  const dashboard = useMemo<DashboardPresentation | undefined>(() => {
+  const dashboardState = useMemo<{ dashboard?: DashboardPresentation; error?: string }>(() => {
     if (!activeSnapshot) {
-      return undefined;
+      return {};
     }
-    return buildDashboard(activeSnapshot, state.settings);
+
+    try {
+      return {
+        dashboard: buildDashboard(activeSnapshot, state.settings)
+      };
+    } catch (caught) {
+      return {
+        error: caught instanceof Error ? caught.message : "Snapshot local incompatible con esta version."
+      };
+    }
   }, [activeSnapshot, state.settings]);
+
+  const dashboard = dashboardState.dashboard;
 
   useEffect(() => {
     persistState(state);
@@ -171,6 +182,13 @@ export function App() {
             </div>
           )}
 
+          {dashboardState.error && (
+            <div className="card danger" role="alert">
+              <strong>Snapshot local incompatible</strong>
+              <div>Se ha ignorado un snapshot guardado que no coincide con el esquema actual.</div>
+            </div>
+          )}
+
           {tab === "summary" && <SummaryTab dashboard={dashboard} state={state} syncState={syncState} onSync={() => void sync()} />}
           {tab === "positions" && <PositionsTab dashboard={dashboard} onOpenPosition={setSelectedPosition} />}
           {tab === "history" && <HistoryTab dashboard={dashboard} />}
@@ -242,6 +260,9 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
   if (requestedTab === "audit") {
     return { tab: "more", morePanel: "audit" };
   }
+  if (requestedTab === "api") {
+    return { tab: "more", morePanel: "api" };
+  }
   if (requestedTab === "summary" || requestedTab === "positions" || requestedTab === "history" || requestedTab === "more") {
     return {
       tab: requestedTab,
@@ -256,7 +277,7 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
 }
 
 function isMorePanel(value: string | null): value is MorePanel {
-  return value === "menu" || value === "movements" || value === "settings" || value === "methodology" || value === "audit";
+  return value === "menu" || value === "movements" || value === "settings" || value === "methodology" || value === "audit" || value === "api";
 }
 
 function Header({
@@ -600,6 +621,7 @@ function MoreTab({
   const sections = [
     { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
     { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
+    { key: "api" as const, label: "Diagnostico API", description: "Payload exacto y respuesta exacta de /info." },
     ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
     { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
   ];
@@ -752,6 +774,10 @@ function MoreTab({
                   {auditMode ? "Ocultar auditoria local" : "Activar auditoria local"}
                 </button>
 
+                <button className="button secondary full-width" type="button" onClick={refreshApplication}>
+                  Actualizar aplicacion
+                </button>
+
                 <button className="button secondary full-width" type="button" onClick={onClearCache}>
                   Borrar datos locales
                 </button>
@@ -771,6 +797,13 @@ function MoreTab({
         <>
           <SubpageHeader title="Metodologia" onBack={() => onSelectPanel("menu")} />
           <MethodologyPanel />
+        </>
+      )}
+
+      {panel === "api" && (
+        <>
+          <SubpageHeader title="Diagnostico API" onBack={() => onSelectPanel("menu")} />
+          {snapshot ? <ApiDiagnosticsPanel snapshot={snapshot} /> : <div className="card">Sin snapshot local todavia.</div>}
         </>
       )}
 
@@ -845,6 +878,53 @@ function AuditPanel({
       </details>
     </div>
   );
+}
+
+function ApiDiagnosticsPanel({ snapshot }: { snapshot: HyperliquidSnapshot }) {
+  const sections: Array<{ key: keyof HyperliquidSnapshot["infoRequests"]; label: string }> = [
+    { key: "clearinghouseState", label: "clearinghouseState" },
+    { key: "spotClearinghouseState", label: "spotClearinghouseState" },
+    { key: "userFillsByTime", label: "userFillsByTime" },
+    { key: "userFunding", label: "userFunding" },
+    { key: "userNonFundingLedgerUpdates", label: "userNonFundingLedgerUpdates" }
+  ];
+
+  return (
+    <div className="stack">
+      <div className="card compact-card stack dense-stack">
+        <h2>JSON exacto de /info</h2>
+        <div className="caption">Se muestra el payload enviado y la respuesta recibida sin interpretar ni transformar.</div>
+        <button
+          className="button secondary full-width"
+          type="button"
+          onClick={() => void copyJson(buildFullApiDump(snapshot))}
+        >
+          Copiar todo el diagnostico API
+        </button>
+      </div>
+
+      {sections.map((section) => (
+        <div className="card compact-card stack" key={section.key}>
+          <div className="section-title section-title-wrap">
+            <h2>{section.label}</h2>
+            <button
+              className="button secondary compact-button"
+              type="button"
+              onClick={() => void copyJson(snapshot.infoRequests[section.key])}
+            >
+              Copiar JSON
+            </button>
+          </div>
+          <div className="caption">Solicitudes capturadas: {String(snapshot.infoRequests[section.key].length)}</div>
+          <JsonTextBlock value={JSON.stringify(snapshot.infoRequests[section.key], null, 2)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function JsonTextBlock({ value }: { value: string }) {
+  return <textarea className="technical-block" readOnly value={value} rows={Math.min(24, Math.max(10, value.split("\n").length))} />;
 }
 
 function AccountDiagnosticsPanel({
@@ -1135,7 +1215,7 @@ function exportCsv(fills: Fill[], complete: boolean) {
       fill.hash ?? "",
       complete ? "complete" : "partial"
     ]
-      .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+      .map((value) => `"${String(value).split('"').join('""')}"`)
       .join(",")
   );
   const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
@@ -1171,6 +1251,31 @@ function exportAuditJson(snapshot: HyperliquidSnapshot, dashboard: DashboardPres
   anchor.download = "hlclear-auditoria-local.json";
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function buildFullApiDump(snapshot: HyperliquidSnapshot) {
+  return {
+    endpoint: `${getApiBaseUrl(snapshot.network)}/info`,
+    fetchedAt: snapshot.fetchedAt,
+    network: snapshot.network,
+    address: snapshot.address,
+    requests: snapshot.infoRequests
+  };
+}
+
+async function copyJson(value: unknown) {
+  try {
+    await navigator.clipboard.writeText(typeof value === "string" ? value : JSON.stringify(value, null, 2));
+  } catch {
+    // Ignore clipboard permission errors on restrictive mobile contexts.
+  }
+}
+
+function refreshApplication() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("cache-reset", "1");
+  url.searchParams.set("refresh", Date.now().toString());
+  window.location.replace(url.toString());
 }
 
 export function createInitialState(): StoredAppState {

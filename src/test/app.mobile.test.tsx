@@ -41,6 +41,7 @@ describe("mobile-first shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
 
     expect(screen.getByRole("button", { name: /Movimientos/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Diagnostico API/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Ajustes/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Metodologia/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Borrar datos locales/i })).toBeInTheDocument();
