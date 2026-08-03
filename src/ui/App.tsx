@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchSnapshot, getApiBaseUrl, getReadOnlyPayloads, isAddressValid } from "../data/hyperliquidApi";
-import { buildDashboard } from "../domain/dashboard";
 import { coverageWindowLabel, formatMaybeMoney, labelCoverage, labelRawFee } from "../domain/accounting";
 import { dec } from "../domain/decimal";
+import { buildDashboard } from "../domain/dashboard";
 import { createEmptyState, loadStoredState, persistState } from "../domain/storage";
 import type {
   DashboardPresentation,
@@ -15,18 +15,20 @@ import type {
   UserSettings
 } from "../domain/types";
 
-type TabKey = "summary" | "positions" | "history" | "movements" | "settings";
+type TabKey = "summary" | "positions" | "history" | "more";
+type MorePanel = "menu" | "movements" | "settings" | "methodology" | "audit";
 
-const tabs: Array<{ key: TabKey; label: string; icon: string }> = [
-  { key: "summary", label: "Resumen", icon: "RS" },
-  { key: "positions", label: "Posiciones", icon: "PS" },
-  { key: "history", label: "Historial", icon: "HS" },
-  { key: "movements", label: "Movimientos", icon: "MV" },
-  { key: "settings", label: "Ajustes", icon: "AJ" }
+const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "positions" | "history" | "more" }> = [
+  { key: "summary", label: "Resumen", icon: "summary" },
+  { key: "positions", label: "Posiciones", icon: "positions" },
+  { key: "history", label: "Historial", icon: "history" },
+  { key: "more", label: "Mas", icon: "more" }
 ];
 
 export function App() {
-  const [tab, setTab] = useState<TabKey>(() => resolveInitialTab());
+  const initialNavigation = useMemo(resolveInitialNavigation, []);
+  const [tab, setTab] = useState<TabKey>(initialNavigation.tab);
+  const [morePanel, setMorePanel] = useState<MorePanel>(initialNavigation.morePanel);
   const [state, setState] = useState<StoredAppState>(() => loadStoredState());
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function App() {
   const [selectedPosition, setSelectedPosition] = useState<PositionPresentation | null>(null);
   const [corsStatus, setCorsStatus] = useState<string>("Pendiente");
   const [auditMode, setAuditMode] = useState<boolean>(() => new URLSearchParams(window.location.search).get("audit") === "1");
+  const [advancedOpen, setAdvancedOpen] = useState<boolean>(() => new URLSearchParams(window.location.search).get("advanced") === "1");
 
   const activeSnapshot = state.snapshots?.[state.settings.network];
 
@@ -64,13 +67,19 @@ export function App() {
   }, [state.settings.network, state.settings.address]);
 
   async function sync(force = false, networkOverride?: Network) {
+    if (syncState === "loading") {
+      return;
+    }
+
     const targetNetwork = networkOverride ?? state.settings.network;
     if (!isAddressValid(state.settings.address)) {
       setError("Introduce una direccion 0x valida.");
+      setSyncState("error");
       return;
     }
     if (!navigator.onLine && !force) {
       setError("Sin conexion. Solo se puede mostrar el ultimo snapshot guardado.");
+      setSyncState("error");
       return;
     }
 
@@ -119,35 +128,37 @@ export function App() {
     }));
   }
 
-  function clearCache() {
+  function clearLocalData() {
     setState(createEmptyState());
+    setSyncState("idle");
+    setError(null);
+    setCorsStatus("Pendiente");
   }
 
   const shellStatus = activeSnapshot?.stale || !online ? "offline" : "online";
+  const lastUpdated = activeSnapshot ? formatDateTime(activeSnapshot.fetchedAt) : "Nunca";
 
   return (
     <>
       <main className="app-shell">
-        <header className="hero">
-          <span className="eyebrow">
-            <span className={`status-dot ${shellStatus}`} />
-            {online ? "Conectado" : "Sin conexion"} · {state.settings.network.toUpperCase()}
-          </span>
-          <h1>HLClear</h1>
-          <p>PWA instalable de solo lectura para Hyperliquid con auditoria contable conservadora y cobertura temporal visible.</p>
-        </header>
+        <Header
+          online={online}
+          shellStatus={shellStatus}
+          network={state.settings.network}
+          lastUpdated={lastUpdated}
+        />
 
-        <div className="stack">
+        <div className="stack page-stack">
           {(activeSnapshot?.stale || !online) && (
-            <div className="banner">
+            <div className="banner" role="status">
               <strong>Datos desactualizados</strong>
-              <span>La interfaz sigue abriendo offline y muestra el ultimo snapshot guardado, nunca como tiempo real.</span>
-              <span>Ultima sincronizacion: {activeSnapshot ? formatDateTime(activeSnapshot.fetchedAt) : "Nunca"}</span>
+              <span>La app puede abrirse offline y mostrar el ultimo snapshot guardado, pero nunca como tiempo real.</span>
+              <span>Ultima sincronizacion: {lastUpdated}</span>
             </div>
           )}
 
           {error && (
-            <div className="card danger">
+            <div className="card danger" role="alert">
               <strong>Error</strong>
               <div>{error}</div>
             </div>
@@ -156,36 +167,50 @@ export function App() {
           {tab === "summary" && <SummaryTab dashboard={dashboard} state={state} syncState={syncState} onSync={() => void sync()} />}
           {tab === "positions" && <PositionsTab dashboard={dashboard} onOpenPosition={setSelectedPosition} />}
           {tab === "history" && <HistoryTab dashboard={dashboard} />}
-          {tab === "movements" && <MovementsTab dashboard={dashboard} />}
-          {tab === "settings" && (
-            <SettingsTab
+          {tab === "more" && (
+            <MoreTab
+              panel={morePanel}
+              onSelectPanel={setMorePanel}
+              dashboard={dashboard}
               settings={state.settings}
               snapshot={activeSnapshot}
-              dashboard={dashboard}
               auditMode={auditMode}
+              advancedOpen={advancedOpen}
+              syncState={syncState}
+              online={online}
               corsStatus={corsStatus}
               onToggleAudit={() => setAuditMode((current) => !current)}
+              onToggleAdvanced={() => setAdvancedOpen((current) => !current)}
               onSettingsChange={updateSettings}
               onSync={() => void sync()}
-              onClearCache={clearCache}
+              onClearCache={clearLocalData}
             />
           )}
         </div>
       </main>
 
-      <nav className="tabs" aria-label="Pestanas principales">
-        {tabs.map((item) => (
-          <button
-            key={item.key}
-            className={`tab-button ${tab === item.key ? "active" : ""}`}
-            type="button"
-            onClick={() => setTab(item.key)}
-            aria-pressed={tab === item.key}
-          >
-            <span aria-hidden="true">{item.icon}</span>
-            <span>{item.label}</span>
-          </button>
-        ))}
+      <nav className="bottom-nav" aria-label="Navegacion principal">
+        {primaryTabs.map((item) => {
+          const selected = tab === item.key;
+          return (
+            <button
+              key={item.key}
+              className={`nav-button ${selected ? "active" : ""}`}
+              type="button"
+              onClick={() => {
+                setTab(item.key);
+                if (item.key !== "more") {
+                  setMorePanel("menu");
+                }
+              }}
+              aria-pressed={selected}
+              aria-current={selected ? "page" : undefined}
+            >
+              <NavIcon icon={item.icon} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {selectedPosition && <PositionDetailModal position={selectedPosition} onClose={() => setSelectedPosition(null)} />}
@@ -193,9 +218,71 @@ export function App() {
   );
 }
 
-function resolveInitialTab(): TabKey {
-  const candidate = new URLSearchParams(window.location.search).get("tab");
-  return tabs.some((item) => item.key === candidate) ? (candidate as TabKey) : "summary";
+function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
+  const params = new URLSearchParams(window.location.search);
+  const requestedTab = params.get("tab");
+  const requestedMore = params.get("more");
+
+  if (requestedTab === "settings") {
+    return { tab: "more", morePanel: "settings" };
+  }
+  if (requestedTab === "movements") {
+    return { tab: "more", morePanel: "movements" };
+  }
+  if (requestedTab === "methodology") {
+    return { tab: "more", morePanel: "methodology" };
+  }
+  if (requestedTab === "audit") {
+    return { tab: "more", morePanel: "audit" };
+  }
+  if (requestedTab === "summary" || requestedTab === "positions" || requestedTab === "history" || requestedTab === "more") {
+    return {
+      tab: requestedTab,
+      morePanel: requestedTab === "more" && isMorePanel(requestedMore) ? requestedMore : "menu"
+    };
+  }
+
+  return {
+    tab: "summary",
+    morePanel: isMorePanel(requestedMore) ? requestedMore : "menu"
+  };
+}
+
+function isMorePanel(value: string | null): value is MorePanel {
+  return value === "menu" || value === "movements" || value === "settings" || value === "methodology" || value === "audit";
+}
+
+function Header({
+  online,
+  shellStatus,
+  network,
+  lastUpdated
+}: {
+  online: boolean;
+  shellStatus: "online" | "offline";
+  network: Network;
+  lastUpdated: string;
+}) {
+  return (
+    <header className="app-header">
+      <div className="app-header-top">
+        <div>
+          <h1>HLClear</h1>
+          <p>Solo lectura</p>
+        </div>
+        <span className={`network-pill ${network}`}>
+          {network === "testnet" ? "TESTNET · Entorno de prueba" : "MAINNET · Lectura real"}
+        </span>
+      </div>
+      <div className="header-meta" role="status">
+        <span className="eyebrow">
+          <span className={`status-dot ${shellStatus}`} />
+          {online ? "Conectado" : "Sin conexion"}
+        </span>
+        <span className="eyebrow">Actualizado: {lastUpdated}</span>
+      </div>
+    </header>
+  );
 }
 
 function SummaryTab({
@@ -211,23 +298,23 @@ function SummaryTab({
 }) {
   return (
     <section className="stack">
-      <div className="card stack">
+      <div className="card compact-card stack">
         <div className="section-title">
-          <h2>Estado de cartera</h2>
-          <button className="button" type="button" onClick={onSync} disabled={!isAddressValid(state.settings.address)}>
-            {syncState === "loading" ? "Actualizando..." : "Actualizar"}
+          <h2>Resumen</h2>
+          <button className="button secondary" type="button" onClick={onSync} disabled={!isAddressValid(state.settings.address) || syncState === "loading"}>
+            {syncState === "loading" ? "Sincronizando…" : "Actualizar"}
           </button>
         </div>
-        <div className="caption">Endpoint directo: {getApiBaseUrl(state.settings.network)}/info · Sin proxy · Solo lectura.</div>
+        <div className="caption">Endpoint: {getApiBaseUrl(state.settings.network)}/info · Solo lectura</div>
       </div>
 
       {!dashboard ? (
-        <div className="card">Introduce tu direccion publica en Ajustes y sincroniza para llenar el resumen.</div>
+        <div className="card">Introduce una direccion publica valida en Ajustes para ver tu cuenta.</div>
       ) : (
         <>
-          <div className="card stack">
-            <div className="section-title">
-              <h2>Semantica contable</h2>
+          <div className="card compact-card stack dense-stack">
+            <div className="section-title section-title-wrap">
+              <h2>Semaforo contable</h2>
               <ProfitBadge status={dashboard.summary.status} />
             </div>
             <Line label="Estado" value={dashboard.summary.semantics.verified ? "Verificado" : "No verificado"} />
@@ -238,44 +325,34 @@ function SummaryTab({
             <MetricCard label="Valor total" value={dashboard.summary.accountValue.rounded} />
             <MetricCard label="Saldo retirable" value={dashboard.summary.withdrawable.rounded} />
             <MetricCard label="Margen usado" value={dashboard.summary.marginUsed.rounded} />
-            <MetricCard label="Depositos netos externos" value={dashboard.summary.netExternalDeposits.rounded} />
-            <MetricCard label="Resultado patrimonial ajustado" value={dashboard.summary.accountValueAdjustedResult.rounded} emphasis={dashboard.summary.status.color} />
-            <MetricCard label="closedPnl API acumulado" value={dashboard.summary.apiClosedPnl.rounded} />
+            <MetricCard label="Depositos netos" value={dashboard.summary.netExternalDeposits.rounded} />
+            <MetricCard label="Resultado patrimonial" value={dashboard.summary.accountValueAdjustedResult.rounded} emphasis={dashboard.summary.status.color} />
+            <MetricCard label="closedPnl API" value={dashboard.summary.apiClosedPnl.rounded} />
             <MetricCard label="rawFee neta" value={dashboard.summary.rawFeeNet.rounded} />
             <MetricCard label="Comision pagada" value={dashboard.summary.feePaid.rounded} />
             <MetricCard label="Rebate recibido" value={dashboard.summary.rebateReceived.rounded} />
-            <MetricCard label="De ella, builder fee" value={dashboard.summary.builderFeeIncluded.rounded} />
+            <MetricCard label="Builder fee" value={dashboard.summary.builderFeeIncluded.rounded} />
             <MetricCard label="Funding" value={dashboard.summary.funding.rounded} />
-            <MetricCard label="P&L no realizado" value={dashboard.summary.unrealizedPnl.rounded} />
+            <MetricCard label="No realizado" value={dashboard.summary.unrealizedPnl.rounded} />
             <MetricCard label="P&L bruto verificado" value={formatMaybeMoney(dashboard.summary.grossTradingPnl)} />
             <MetricCard label="Resultado derivado" value={formatMaybeMoney(dashboard.summary.netPnlDerived)} emphasis={dashboard.summary.status.color} />
           </div>
 
-          <div className="card stack">
-            <h2>Cobertura del historial</h2>
+          <div className="card compact-card stack dense-stack">
+            <h2>Cobertura</h2>
             <Line label="Estado" value={labelCoverage(dashboard.historyCoverage)} />
-            <Line label="Ventana real descargada" value={coverageWindowLabel(dashboard.historyCoverage)} />
-            <Line label="Fills descargados" value={String(dashboard.historyCoverage.fillsDownloaded)} />
-            <Line label="Funding descargado" value={String(dashboard.historyCoverage.fundingEntriesDownloaded)} />
-            <Line label="Ledger descargado" value={String(dashboard.historyCoverage.ledgerEntriesDownloaded)} />
-            <Line label="API limit oficial" value={dashboard.historyCoverage.reachedApiLimit ? "Alcanzado" : "No"} />
-            <Line label="Limite interno" value={dashboard.historyCoverage.reachedInternalPageLimit ? "Alcanzado" : "No"} />
+            <Line label="Ventana descargada" value={coverageWindowLabel(dashboard.historyCoverage)} />
+            <Line label="Fills" value={String(dashboard.historyCoverage.fillsDownloaded)} />
+            <Line label="Funding" value={String(dashboard.historyCoverage.fundingEntriesDownloaded)} />
+            <Line label="Ledger" value={String(dashboard.historyCoverage.ledgerEntriesDownloaded)} />
           </div>
 
-          <div className="card stack">
-            <h2>Estimaciones oficiales</h2>
-            {dashboard.summary.officialEstimates.map((estimate) => (
-              <Line key={estimate.label} label={estimate.label} value={estimate.value.rounded} />
-            ))}
-            <div className="caption">portfolio.pnlHistory se muestra solo como estimacion oficial; no como contabilidad exacta.</div>
-          </div>
-
-          <div className="card stack">
-            <div className="section-title">
+          <div className="card compact-card stack dense-stack">
+            <div className="section-title section-title-wrap">
               <h2>Reconciliacion</h2>
-              {!dashboard.reconciliation.verified && <span className="warning">Gris hasta verificacion completa</span>}
+              {!dashboard.reconciliation.verified && <span className="warning">Estado gris</span>}
             </div>
-            <Line label="Resultado patrimonial ajustado" value={dashboard.reconciliation.accountValueAdjustedResult.rounded} />
+            <Line label="Patrimonial ajustado" value={dashboard.reconciliation.accountValueAdjustedResult.rounded} />
             <Line label="Resultado derivado" value={formatMaybeMoney(dashboard.reconciliation.netPnlDerived)} />
             <Line label="Diferencia" value={formatMaybeMoney(dashboard.reconciliation.difference)} highlight={dashboard.reconciliation.warning ? "warning" : undefined} />
             {dashboard.methodologyWarnings.map((warning) => (
@@ -301,10 +378,10 @@ function PositionsTab({
 
   return (
     <section className="stack">
-      <div className="card">
-        <div className="section-title">
-          <h2>Posiciones abiertas</h2>
-          <span className="caption">Los resultados derivados quedan en gris si la contabilidad no esta verificada.</span>
+      <div className="card compact-card">
+        <div className="section-title section-title-wrap">
+          <h2>Posiciones</h2>
+          <span className="caption">Estado conservador en gris si falta verificacion.</span>
         </div>
       </div>
       <div className="list">
@@ -312,20 +389,16 @@ function PositionsTab({
           <div className="card">No hay posiciones abiertas.</div>
         ) : (
           dashboard.positions.map((position) => (
-            <button className="row-card" type="button" key={position.key} onClick={() => onOpenPosition(position)}>
+            <button className="row-card touch-card" type="button" key={position.key} onClick={() => onOpenPosition(position)}>
               <div className="row-top">
                 <strong>{position.coin} · {position.direction}</strong>
                 <ProfitBadge status={position.status} />
               </div>
               <div className="position-grid">
                 <Line label="P&L no realizado" value={position.grossUnrealized.rounded} />
-                <Line label="closedPnl atribuido" value={position.rawClosedPnlAttributed.rounded} />
-                <Line label="rawFee neta" value={position.rawFeeNet.rounded} />
                 <Line label="Comision pagada" value={position.feePaid.rounded} />
                 <Line label="Rebate recibido" value={position.rebateReceived.rounded} />
-                <Line label="Builder fee incluido" value={position.builderFeeIncluded.rounded} />
                 <Line label="Funding" value={position.fundingNet.rounded} />
-                <Line label="Cierre estimado taker" value={position.estimatedCloseFee.rounded} />
                 <Line label="Neto si cerrases ahora" value={formatMaybeMoney(position.netIfCloseNow)} />
               </div>
             </button>
@@ -345,100 +418,81 @@ function HistoryTab({ dashboard }: { dashboard?: DashboardPresentation }) {
 
   return (
     <section className="stack">
-      <div className="card stack">
-        <div className="pill-row">
-          <button className="button secondary" type="button" onClick={() => setMode("raw")}>Ejecuciones crudas</button>
-          <button className="button secondary" type="button" onClick={() => setMode("daily")}>Resumen diario</button>
-          <button className="button secondary" type="button" onClick={() => setMode("closed")}>Ciclos cerrados</button>
+      <div className="card compact-card stack">
+        <div className="mode-switch" role="tablist" aria-label="Vista del historial">
+          <button className={`segmented-button ${mode === "raw" ? "active" : ""}`} type="button" onClick={() => setMode("raw")} aria-pressed={mode === "raw"}>Crudo</button>
+          <button className={`segmented-button ${mode === "daily" ? "active" : ""}`} type="button" onClick={() => setMode("daily")} aria-pressed={mode === "daily"}>Diario</button>
+          <button className={`segmented-button ${mode === "closed" ? "active" : ""}`} type="button" onClick={() => setMode("closed")} aria-pressed={mode === "closed"}>Ciclos</button>
         </div>
         <div className="caption">{labelCoverage(dashboard.historyCoverage)}</div>
       </div>
 
-      {mode === "raw" && <RawFillsTable rows={dashboard.rawFills} />}
-      {mode === "daily" && <DailySummaryTable rows={dashboard.dailySummaries} />}
-      {mode === "closed" && <ClosedCycleTable rows={dashboard.closedCycles} />}
+      {mode === "raw" && <RawFillsList rows={dashboard.rawFills} />}
+      {mode === "daily" && <DailySummaryList rows={dashboard.dailySummaries} />}
+      {mode === "closed" && <ClosedCycleList rows={dashboard.closedCycles} />}
     </section>
   );
 }
 
-function RawFillsTable({ rows }: { rows: Fill[] }) {
-  return (
-    <div className="card data-table">
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Activo</th>
-            <th>Direccion</th>
-            <th>Precio</th>
-            <th>Tamano</th>
-            <th>Nominal</th>
-            <th>rawClosedPnl</th>
-            <th>rawFee</th>
-            <th>Etiqueta fee</th>
-            <th>builderFee</th>
-            <th>feeToken</th>
-            <th>Maker/Taker</th>
-            <th>order ID</th>
-            <th>Hash</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((fill) => (
-            <tr key={fill.stableId}>
-              <td>{formatDateTime(fill.time)}</td>
-              <td>{fill.coin}</td>
-              <td>{fill.direction}</td>
-              <td>{fill.price}</td>
-              <td>{fill.size}</td>
-              <td>{fill.notional}</td>
-              <td>{fill.rawClosedPnl}</td>
-              <td>{fill.rawFee}</td>
-              <td>{labelRawFee(dec(fill.rawFee))}</td>
-              <td>{fill.rawBuilderFee ?? "0"}</td>
-              <td>{fill.feeToken}</td>
-              <td>{fill.crossed ? "taker" : "maker"}</td>
-              <td>{fill.orderId ?? "N/D"}</td>
-              <td>{fill.hash ?? "N/D"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function DailySummaryTable({ rows }: { rows: DashboardPresentation["dailySummaries"] }) {
+function RawFillsList({ rows }: { rows: Fill[] }) {
   return (
     <div className="list">
-      {rows.map((row) => (
-        <div className="card stack" key={row.day}>
+      {rows.map((fill) => (
+        <div className="card compact-card" key={fill.stableId}>
           <div className="row-top">
-            <strong>{row.day}</strong>
-            <ProfitBadge status={row.status} />
+            <strong>{fill.coin}</strong>
+            <span className="caption">{formatDateTime(fill.time)}</span>
           </div>
-          <Line label="closedPnl API" value={row.apiClosedPnl.rounded} />
-          <Line label="Comision maker pagada" value={row.makerFeePaid.rounded} />
-          <Line label="Comision taker pagada" value={row.takerFeePaid.rounded} />
-          <Line label="Rebate maker recibido" value={row.makerRebateReceived.rounded} />
-          <Line label="Rebate taker recibido" value={row.takerRebateReceived.rounded} />
-          <Line label="rawFee neta" value={row.rawFeeNet.rounded} />
-          <Line label="Funding" value={row.funding.rounded} />
-          <Line label="Resultado derivado" value={formatMaybeMoney(row.derivedNetPnl)} />
-          <Line label="Volumen" value={row.volume.rounded} />
-          <Line label="Ejecuciones" value={String(row.executions)} />
-          <div className="caption">{row.verified ? "Semantica verificada para este resumen." : "Resumen derivado no verificado."}</div>
+          <div className="stack dense-stack">
+            <Line label="Direccion" value={fill.direction} />
+            <Line label="Precio" value={fill.price} />
+            <Line label="Tamano" value={fill.size} />
+            <Line label="Nominal" value={fill.notional} />
+            <Line label="rawClosedPnl" value={fill.rawClosedPnl} />
+            <Line label="rawFee" value={fill.rawFee} />
+            <Line label="Fee" value={labelRawFee(dec(fill.rawFee))} />
+            <Line label="Builder fee" value={fill.rawBuilderFee ?? "0"} />
+            <Line label="feeToken" value={fill.feeToken} />
+            <Line label="Maker/Taker" value={fill.crossed ? "taker" : "maker"} />
+            <Line label="order ID" value={String(fill.orderId ?? "N/D")} />
+            <Line label="Hash" value={fill.hash ?? "N/D"} />
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-function ClosedCycleTable({ rows }: { rows: DashboardPresentation["closedCycles"] }) {
+function DailySummaryList({ rows }: { rows: DashboardPresentation["dailySummaries"] }) {
   return (
     <div className="list">
       {rows.map((row) => (
-        <div className="card stack" key={row.id}>
+        <div className="card compact-card stack" key={row.day}>
+          <div className="row-top">
+            <strong>{row.day}</strong>
+            <ProfitBadge status={row.status} />
+          </div>
+          <Line label="closedPnl API" value={row.apiClosedPnl.rounded} />
+          <Line label="Comision maker" value={row.makerFeePaid.rounded} />
+          <Line label="Comision taker" value={row.takerFeePaid.rounded} />
+          <Line label="Rebate maker" value={row.makerRebateReceived.rounded} />
+          <Line label="Rebate taker" value={row.takerRebateReceived.rounded} />
+          <Line label="rawFee neta" value={row.rawFeeNet.rounded} />
+          <Line label="Funding" value={row.funding.rounded} />
+          <Line label="Resultado derivado" value={formatMaybeMoney(row.derivedNetPnl)} />
+          <Line label="Volumen" value={row.volume.rounded} />
+          <Line label="Ejecuciones" value={String(row.executions)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ClosedCycleList({ rows }: { rows: DashboardPresentation["closedCycles"] }) {
+  return (
+    <div className="list">
+      {rows.map((row) => (
+        <div className="card compact-card stack" key={row.id}>
           <div className="row-top">
             <strong>{row.coin}</strong>
             <ProfitBadge status={row.status} />
@@ -447,13 +501,303 @@ function ClosedCycleTable({ rows }: { rows: DashboardPresentation["closedCycles"
           <Line label="rawFee neta" value={row.rawFeeNet.rounded} />
           <Line label="Comision pagada" value={row.feePaid.rounded} />
           <Line label="Rebate recibido" value={row.rebateReceived.rounded} />
-          <Line label="De ella, builder fee" value={row.builderFeeIncluded.rounded} />
+          <Line label="Builder fee" value={row.builderFeeIncluded.rounded} />
           <Line label="Funding" value={row.funding.rounded} />
           <Line label="Resultado derivado" value={formatMaybeMoney(row.derivedNetPnl)} />
-          <Line label="Ejecuciones" value={String(row.executions)} />
           <Line label="Duracion" value={row.durationLabel} />
         </div>
       ))}
+    </div>
+  );
+}
+
+function MoreTab({
+  panel,
+  onSelectPanel,
+  dashboard,
+  settings,
+  snapshot,
+  auditMode,
+  advancedOpen,
+  syncState,
+  online,
+  corsStatus,
+  onToggleAudit,
+  onToggleAdvanced,
+  onSettingsChange,
+  onSync,
+  onClearCache
+}: {
+  panel: MorePanel;
+  onSelectPanel: (panel: MorePanel) => void;
+  dashboard?: DashboardPresentation;
+  settings: UserSettings;
+  snapshot?: HyperliquidSnapshot;
+  auditMode: boolean;
+  advancedOpen: boolean;
+  syncState: SyncState;
+  online: boolean;
+  corsStatus: string;
+  onToggleAudit: () => void;
+  onToggleAdvanced: () => void;
+  onSettingsChange: (patch: Partial<UserSettings>) => void;
+  onSync: () => void;
+  onClearCache: () => void;
+}) {
+  const canExport = Boolean(snapshot);
+  const addressValid = isAddressValid(settings.address);
+  const savedAddress = snapshot?.address ?? (addressValid ? settings.address : "");
+  const syncButtonLabel =
+    syncState === "loading"
+      ? "Sincronizando…"
+      : syncState === "ready"
+        ? "Sincronizado"
+        : syncState === "error"
+          ? "Error al sincronizar"
+          : "Guardar y sincronizar";
+
+  const sections = [
+    { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
+    { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
+    ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
+    { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
+  ];
+
+  return (
+    <section className="stack">
+      {panel === "menu" && (
+        <>
+          <div className="card compact-card stack">
+            <h2>Mas</h2>
+            <div className="list">
+              {sections.map((section) => (
+                <button
+                  key={section.key}
+                  type="button"
+                  className="row-card menu-card"
+                  onClick={() => onSelectPanel(section.key)}
+                >
+                  <div className="row-top">
+                    <strong>{section.label}</strong>
+                    <span aria-hidden="true">›</span>
+                  </div>
+                  <div className="caption">{section.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="card compact-card stack">
+            <h2>Acciones locales</h2>
+            <button className="button secondary full-width" type="button" onClick={onClearCache}>
+              Borrar datos locales
+            </button>
+            <div className="caption">Elimina direccion, ajustes y snapshots guardados en este dispositivo.</div>
+          </div>
+        </>
+      )}
+
+      {panel === "movements" && (
+        <>
+          <SubpageHeader title="Movimientos" onBack={() => onSelectPanel("menu")} />
+          <MovementsTab dashboard={dashboard} />
+        </>
+      )}
+
+      {panel === "settings" && (
+        <>
+          <div className="card compact-card stack dense-stack">
+            <div className="section-title section-title-wrap">
+              <div className="action-row">
+                <button className="button secondary compact-button" type="button" onClick={() => onSelectPanel("menu")}>
+                  Volver
+                </button>
+                <h2>Ajustes basicos</h2>
+              </div>
+              <span className={`network-pill ${settings.network}`}>
+                {settings.network === "testnet" ? "TESTNET · Prueba" : "MAINNET · Lectura"}
+              </span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="address">Direccion publica</label>
+              <input
+                id="address"
+                type="text"
+                inputMode="text"
+                placeholder="0x..."
+                value={settings.address}
+                onChange={(event) => onSettingsChange({ address: event.target.value.trim() })}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={settings.address.length > 0 && !addressValid}
+              />
+              <div className="input-actions">
+                <button className="button secondary compact-button" type="button" onClick={() => void pasteAddress(onSettingsChange)}>
+                  Pegar
+                </button>
+                <button className="button secondary compact-button" type="button" onClick={() => onSettingsChange({ address: "" })}>
+                  Borrar
+                </button>
+                <button
+                  className="button secondary compact-button"
+                  type="button"
+                  onClick={() => void navigator.clipboard.writeText(settings.address)}
+                  disabled={!addressValid}
+                >
+                  Copiar
+                </button>
+              </div>
+              <div className="caption">
+                {settings.address.length === 0
+                  ? "Introduce una direccion 0x para consultar la cuenta."
+                  : addressValid
+                    ? `Direccion valida${savedAddress ? ` · Guardada: ${shortAddress(savedAddress)}` : ""}`
+                    : "Formato invalido. Debe empezar por 0x y tener 42 caracteres."}
+              </div>
+            </div>
+
+            <div className="field">
+              <label htmlFor="network">Entorno</label>
+              <select id="network" value={settings.network} onChange={(event) => onSettingsChange({ network: event.target.value as Network })}>
+                <option value="testnet">TESTNET · Entorno de prueba</option>
+                <option value="mainnet">MAINNET · Solo lectura real</option>
+              </select>
+            </div>
+
+            <button className="button full-width" type="button" onClick={onSync} disabled={!addressValid || syncState === "loading"}>
+              {syncButtonLabel}
+            </button>
+
+            <div className="status-grid compact-status-grid">
+              <InfoTile label="Conexion" value={online ? "Conectado" : "Sin conexion"} />
+              <InfoTile label="Ultima sincronizacion" value={snapshot ? formatDateTime(snapshot.fetchedAt) : "Nunca"} />
+            </div>
+          </div>
+
+          <div className="card compact-card stack">
+            <button className="accordion-trigger" type="button" onClick={onToggleAdvanced} aria-expanded={advancedOpen}>
+              <span>Opciones avanzadas</span>
+              <span aria-hidden="true">{advancedOpen ? "−" : "+"}</span>
+            </button>
+
+            {advancedOpen && (
+              <div className="stack">
+                <div className="field">
+                  <label htmlFor="closeMode">Estimacion de cierre</label>
+                  <select id="closeMode" value={settings.closeMode} onChange={(event) => onSettingsChange({ closeMode: event.target.value as UserSettings["closeMode"] })}>
+                    <option value="taker">Taker conservador</option>
+                    <option value="maker">Maker informativo</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="slippage">Slippage estimado (bps)</label>
+                  <input id="slippage" type="number" value={settings.slippageBps} onChange={(event) => onSettingsChange({ slippageBps: event.target.value })} />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="tolerance">Tolerancia (USDC)</label>
+                  <input id="tolerance" type="number" step="0.01" value={settings.toleranceUsdc} onChange={(event) => onSettingsChange({ toleranceUsdc: event.target.value })} />
+                </div>
+
+                <div className="status-grid compact-status-grid">
+                  <InfoTile label="API" value={snapshot?.apiHealth ?? "Sin consultar"} />
+                  <InfoTile label="CORS" value={corsStatus} />
+                </div>
+
+                <button className="button secondary full-width" type="button" onClick={onToggleAudit}>
+                  {auditMode ? "Ocultar auditoria local" : "Activar auditoria local"}
+                </button>
+
+                <button className="button secondary full-width" type="button" onClick={onClearCache}>
+                  Borrar datos locales
+                </button>
+
+                <div className="caption">La auditoria local no carga datos por defecto y cualquier exportacion se genera solo en este dispositivo.</div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {panel === "methodology" && (
+        <>
+          <SubpageHeader title="Metodologia" onBack={() => onSelectPanel("menu")} />
+          <MethodologyPanel />
+        </>
+      )}
+
+      {panel === "audit" && (
+        <>
+          <SubpageHeader title="Auditoria" onBack={() => onSelectPanel("menu")} />
+          {!auditMode ? (
+            <div className="card">Activa antes el modo de auditoria local desde Ajustes avanzados.</div>
+          ) : dashboard && snapshot ? (
+            <AuditPanel dashboard={dashboard} snapshot={snapshot} canExport={canExport} />
+          ) : (
+            <div className="card">Sin snapshot local todavia.</div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function MethodologyPanel() {
+  return (
+    <div className="card compact-card stack">
+      <Line label="Patrimonial ajustado" value="accountValue + retiradas externas - depositos externos" />
+      <Line label="closedPnl API" value="Suma exacta de rawClosedPnl" />
+      <Line label="rawFee" value="Positivo = comision cobrada · Negativo = rebate recibido" />
+      <Line label="Comision pagada" value="Suma de rawFee positivos" />
+      <Line label="Rebate recibido" value="Suma del valor absoluto de rawFee negativos" />
+      <Line label="Funding" value="Suma algebraica de rawFunding" />
+      <Line label="Estimacion oficial" value="portfolio.pnlHistory se etiqueta solo como estimacion" />
+    </div>
+  );
+}
+
+function AuditPanel({
+  dashboard,
+  snapshot,
+  canExport
+}: {
+  dashboard: DashboardPresentation;
+  snapshot: HyperliquidSnapshot;
+  canExport: boolean;
+}) {
+  return (
+    <div className="stack">
+      <div className="card compact-card stack">
+        <Line label="Suma raw closedPnl" value={dashboard.audit.rawClosedPnl.rounded} />
+        <Line label="Suma raw fee neta" value={dashboard.audit.rawFeeNet.rounded} />
+        <Line label="Suma comision pagada" value={dashboard.audit.feePaid.rounded} />
+        <Line label="Suma rebate recibido" value={dashboard.audit.rebateReceived.rounded} />
+        <Line label="Suma raw builderFee" value={dashboard.audit.rawBuilderFeeIncluded.rounded} />
+        <Line label="Suma funding" value={dashboard.audit.rawFunding.rounded} />
+        <Line label="Resultado patrimonial" value={dashboard.audit.accountValueAdjustedResult.rounded} />
+        <Line label="P&L bruto verificado" value={formatMaybeMoney(dashboard.audit.grossTradingPnl)} />
+        <Line label="Resultado derivado" value={formatMaybeMoney(dashboard.audit.netPnlDerived)} />
+        <Line label="Cobertura temporal" value={coverageWindowLabel(dashboard.historyCoverage)} />
+        {dashboard.audit.formulas.map((formula) => (
+          <div className="pill" key={formula}>{formula}</div>
+        ))}
+        <button className="button secondary full-width" type="button" onClick={() => canExport && exportAuditJson(snapshot, dashboard)} disabled={!canExport}>
+          Exportar informe JSON local
+        </button>
+      </div>
+
+      <details className="card compact-card">
+        <summary>JSON original de endpoints</summary>
+        <pre className="technical-block">{JSON.stringify(snapshot.raw, null, 2)}</pre>
+      </details>
+
+      <details className="card compact-card">
+        <summary>Payloads de lectura</summary>
+        <pre className="technical-block">{JSON.stringify(getReadOnlyPayloads(snapshot.address, Date.now()), null, 2)}</pre>
+      </details>
     </div>
   );
 }
@@ -467,10 +811,10 @@ function MovementsTab({ dashboard }: { dashboard?: DashboardPresentation }) {
     <section className="stack">
       {Object.entries(dashboard.movements).map(([title, rows]) =>
         rows.length === 0 ? null : (
-          <div className="card stack" key={title}>
+          <div className="card compact-card stack" key={title}>
             <h2>{title}</h2>
             {rows.map((row) => (
-              <div className="row-card" key={row.id}>
+              <div className="row-card compact-row" key={row.id}>
                 <div className="row-top">
                   <strong>{row.delta.type}</strong>
                   <span className="mono">{row.displayAmount ?? "N/D"}</span>
@@ -485,194 +829,20 @@ function MovementsTab({ dashboard }: { dashboard?: DashboardPresentation }) {
   );
 }
 
-function SettingsTab({
-  settings,
-  snapshot,
-  dashboard,
-  auditMode,
-  corsStatus,
-  onToggleAudit,
-  onSettingsChange,
-  onSync,
-  onClearCache
-}: {
-  settings: UserSettings;
-  snapshot?: HyperliquidSnapshot;
-  dashboard?: DashboardPresentation;
-  auditMode: boolean;
-  corsStatus: string;
-  onToggleAudit: () => void;
-  onSettingsChange: (patch: Partial<UserSettings>) => void;
-  onSync: () => void;
-  onClearCache: () => void;
-}) {
+function SubpageHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <section className="stack">
-      <div className="card form-grid">
-        <div className="field">
-          <label htmlFor="address">Direccion publica</label>
-          <input
-            id="address"
-            type="text"
-            placeholder="0x..."
-            value={settings.address}
-            onChange={(event) => onSettingsChange({ address: event.target.value })}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor="network">Entorno</label>
-          <select id="network" value={settings.network} onChange={(event) => onSettingsChange({ network: event.target.value as Network })}>
-            <option value="testnet">Testnet</option>
-            <option value="mainnet">Mainnet</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="closeMode">Estimacion de cierre</label>
-          <select id="closeMode" value={settings.closeMode} onChange={(event) => onSettingsChange({ closeMode: event.target.value as UserSettings["closeMode"] })}>
-            <option value="taker">Taker conservador</option>
-            <option value="maker">Maker informativo</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="slippage">Slippage estimado (bps)</label>
-          <input id="slippage" type="number" value={settings.slippageBps} onChange={(event) => onSettingsChange({ slippageBps: event.target.value })} />
-        </div>
-
-        <div className="field">
-          <label htmlFor="tolerance">Tolerancia (USDC)</label>
-          <input id="tolerance" type="number" step="0.01" value={settings.toleranceUsdc} onChange={(event) => onSettingsChange({ toleranceUsdc: event.target.value })} />
-        </div>
-
-        <div className="action-row">
-          <button className="button" type="button" onClick={onSync}>Guardar y sincronizar</button>
-          <button className="button secondary" type="button" onClick={() => navigator.clipboard.writeText(settings.address)}>Copiar direccion</button>
-          <button className="button secondary" type="button" onClick={onClearCache}>Borrar todos mis datos locales</button>
-        </div>
-      </div>
-
-      <div className="card stack">
-        <h2>Estado y exportacion</h2>
-        <Line label="Ultima sincronizacion" value={snapshot ? formatDateTime(snapshot.fetchedAt) : "Nunca"} />
-        <Line label="Estado de la API" value={snapshot?.apiHealth ?? "Sin consultar"} />
-        <Line label="Verificacion CORS" value={corsStatus} />
-        <Line label="Cobertura" value={dashboard ? labelCoverage(dashboard.historyCoverage) : "Sin datos"} />
-        <Line label="Moneda visual" value="USD" />
-        <button
-          className="button secondary"
-          type="button"
-          disabled={!snapshot}
-          onClick={() => exportCsv(snapshot?.fills ?? [], dashboard?.historyCoverage.isCompleteForRequestedPeriod ?? false)}
-        >
-          Exportar fills crudos CSV
-        </button>
-        {dashboard && !dashboard.historyCoverage.isCompleteForRequestedPeriod && (
-          <div className="caption">La exportacion es cruda y puede ser parcial; no se presenta como contabilidad completa.</div>
-        )}
-      </div>
-
-      <div className="card stack">
-        <h2>Metodologia</h2>
-        <Line label="Resultado patrimonial ajustado" value="accountValue + retiradas externas - depositos externos" />
-        <Line label="closedPnl API" value="suma exacta del campo rawClosedPnl recibido de Hyperliquid" />
-        <Line label="rawFee" value="rawFee conserva exactamente el signo de la API: positivo = comision cobrada, negativo = rebate recibido" />
-        <Line label="Comision pagada" value="suma de rawFee positivos" />
-        <Line label="Rebate recibido" value="suma del valor absoluto de rawFee negativos" />
-        <Line label="Funding" value="suma algebraica de rawFunding" />
-        <Line label="Resultado derivado" value="solo se muestra como verificado si la semantica de closedPnl frente a fee queda demostrada" />
-        <Line label="Estimaciones oficiales" value="portfolio.pnlHistory solo se muestra como estimacion oficial 24 h / 7 dias / 30 dias" />
-      </div>
-
-      <div className="card stack">
-        <div className="section-title">
-          <h2>Ajustes avanzados</h2>
-          <button className="button secondary" type="button" onClick={onToggleAudit}>
-            {auditMode ? "Ocultar auditoria" : "Modo auditoria local"}
-          </button>
-        </div>
-        <div className="caption">El modo auditoria muestra JSON original y formulas locales. No envia nada y no se exporta automaticamente.</div>
-      </div>
-
-      {auditMode && dashboard && snapshot && (
-        <div className="card stack">
-          <h2>Auditoria local</h2>
-          <Line label="Suma raw closedPnl" value={dashboard.audit.rawClosedPnl.rounded} />
-          <Line label="Suma raw fee neta" value={dashboard.audit.rawFeeNet.rounded} />
-          <Line label="Suma comision pagada" value={dashboard.audit.feePaid.rounded} />
-          <Line label="Suma rebate recibido" value={dashboard.audit.rebateReceived.rounded} />
-          <Line label="Suma raw builderFee" value={dashboard.audit.rawBuilderFeeIncluded.rounded} />
-          <Line label="Suma funding" value={dashboard.audit.rawFunding.rounded} />
-          <Line label="Resultado patrimonial ajustado" value={dashboard.audit.accountValueAdjustedResult.rounded} />
-          <Line label="P&L bruto verificado" value={formatMaybeMoney(dashboard.audit.grossTradingPnl)} />
-          <Line label="Resultado derivado" value={formatMaybeMoney(dashboard.audit.netPnlDerived)} />
-          <Line label="Cobertura temporal" value={coverageWindowLabel(dashboard.historyCoverage)} />
-          {dashboard.audit.formulas.map((formula) => (
-            <div className="pill" key={formula}>{formula}</div>
-          ))}
-          <button className="button secondary" type="button" onClick={() => exportAuditJson(snapshot, dashboard)}>
-            Exportar informe JSON local
-          </button>
-          <details>
-            <summary>JSON original de endpoints</summary>
-            <pre className="technical-block">{JSON.stringify(snapshot.raw, null, 2)}</pre>
-          </details>
-        </div>
-      )}
-
-      <div className="card stack">
-        <h2>Payloads de lectura</h2>
-        <pre className="technical-block">{JSON.stringify(getReadOnlyPayloads(settings.address || "0x0000000000000000000000000000000000000000", Date.now()), null, 2)}</pre>
-      </div>
-    </section>
-  );
-}
-
-function PositionDetailModal({
-  position,
-  onClose
-}: {
-  position: PositionPresentation;
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="position-title">
-      <div className="modal stack">
-        <div className="section-title">
-          <h2 id="position-title">{position.coin} · {position.direction}</h2>
-          <button className="button secondary" type="button" onClick={onClose}>Cerrar</button>
-        </div>
-        <ProfitBadge status={position.status} />
-        <div className="breakdown-grid">
-          <BreakdownLine label="P&L no realizado" value={position.grossUnrealized.rounded} />
-          <BreakdownLine label="closedPnl atribuido" value={position.rawClosedPnlAttributed.rounded} />
-          <BreakdownLine label="rawFee neta" value={position.rawFeeNet.rounded} />
-          <BreakdownLine label="Comision pagada" value={position.feePaid.rounded} />
-          <BreakdownLine label="Rebate recibido" value={position.rebateReceived.rounded} />
-          <BreakdownLine label="De ella, builder fee" value={position.builderFeeIncluded.rounded} />
-          <BreakdownLine label="Funding neto" value={position.fundingNet.rounded} />
-          <BreakdownLine label="Cierre estimado taker" value={position.estimatedCloseFee.rounded} hint={`Tarifa exacta usada: ${position.feeRateUsed}`} />
-          <BreakdownLine label="Neto si cerrases ahora" value={formatMaybeMoney(position.netIfCloseNow)} />
-          <BreakdownLine label="Resultado conservador con slippage" value={formatMaybeMoney(position.conservativeNet)} />
-          <BreakdownLine label="Precio de liquidacion oficial" value={position.liquidationPrice?.rounded ?? "N/D"} />
-          <BreakdownLine label="Nominal restante" value={position.nominalRemaining.rounded} />
-          <BreakdownLine label="Ultima actualizacion" value={formatDateTime(position.lastUpdated)} />
-        </div>
-        <div className="caption">{position.status.reason}</div>
-        {position.warnings.map((warning) => (
-          <div className="pill" key={warning}>{warning}</div>
-        ))}
-      </div>
+    <div className="subpage-header">
+      <button className="button secondary compact-button" type="button" onClick={onBack}>
+        Volver
+      </button>
+      <h2>{title}</h2>
     </div>
   );
 }
 
 function MetricCard({ label, value, emphasis }: { label: string; value: string; emphasis?: "red" | "orange" | "green" | "gray" }) {
   return (
-    <div className="card">
+    <div className="card metric-card">
       <div className="metric-label">{label}</div>
       <div className={`metric-value mono ${classNameForStatus(emphasis)}`}>{value}</div>
     </div>
@@ -680,7 +850,12 @@ function MetricCard({ label, value, emphasis }: { label: string; value: string; 
 }
 
 function ProfitBadge({ status }: { status: DashboardPresentation["summary"]["status"] | PositionPresentation["status"] }) {
-  return <span className={`profit-state profit-${status.color}`}>{status.icon} {status.label}</span>;
+  return (
+    <span className={`profit-state profit-${status.color}`}>
+      <span aria-hidden="true">{status.icon}</span>
+      <span>{status.label}</span>
+    </span>
+  );
 }
 
 function BreakdownLine({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -697,6 +872,83 @@ function Line({ label, value, highlight }: { label: string; value: string; highl
     <div className="line">
       <span>{label}</span>
       <strong className={`mono ${highlight ?? ""}`}>{value}</strong>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="info-tile">
+      <span className="metric-label">{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function NavIcon({ icon }: { icon: "summary" | "positions" | "history" | "more" }) {
+  if (icon === "summary") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 5h16M4 12h16M4 19h10" />
+      </svg>
+    );
+  }
+  if (icon === "positions") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 18V9m7 9V5m7 13v-6" />
+      </svg>
+    );
+  }
+  if (icon === "history") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12a8 8 0 1 0 3-6.24M4 4v5h5m3-1v5l3 2" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 7h14M5 12h14M5 17h14" />
+    </svg>
+  );
+}
+
+function PositionDetailModal({
+  position,
+  onClose
+}: {
+  position: PositionPresentation;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="position-title">
+      <div className="modal stack">
+        <div className="section-title section-title-wrap">
+          <h2 id="position-title">{position.coin} · {position.direction}</h2>
+          <button className="button secondary compact-button" type="button" onClick={onClose}>Cerrar</button>
+        </div>
+        <ProfitBadge status={position.status} />
+        <div className="breakdown-grid">
+          <BreakdownLine label="P&L no realizado" value={position.grossUnrealized.rounded} />
+          <BreakdownLine label="closedPnl atribuido" value={position.rawClosedPnlAttributed.rounded} />
+          <BreakdownLine label="rawFee neta" value={position.rawFeeNet.rounded} />
+          <BreakdownLine label="Comision pagada" value={position.feePaid.rounded} />
+          <BreakdownLine label="Rebate recibido" value={position.rebateReceived.rounded} />
+          <BreakdownLine label="Builder fee" value={position.builderFeeIncluded.rounded} />
+          <BreakdownLine label="Funding neto" value={position.fundingNet.rounded} />
+          <BreakdownLine label="Cierre estimado taker" value={position.estimatedCloseFee.rounded} hint={`Tarifa exacta usada: ${position.feeRateUsed}`} />
+          <BreakdownLine label="Neto si cerrases ahora" value={formatMaybeMoney(position.netIfCloseNow)} />
+          <BreakdownLine label="Resultado conservador" value={formatMaybeMoney(position.conservativeNet)} />
+          <BreakdownLine label="Liquidacion oficial" value={position.liquidationPrice?.rounded ?? "N/D"} />
+          <BreakdownLine label="Nominal restante" value={position.nominalRemaining.rounded} />
+          <BreakdownLine label="Ultima actualizacion" value={formatDateTime(position.lastUpdated)} />
+        </div>
+        <div className="caption">{position.status.reason}</div>
+        {position.warnings.map((warning) => (
+          <div className="pill" key={warning}>{warning}</div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -736,6 +988,19 @@ async function verifyCors(network: Network, address: string): Promise<string> {
   } catch (error) {
     return error instanceof Error ? error.message : "Fallo de CORS o red";
   }
+}
+
+async function pasteAddress(onSettingsChange: (patch: Partial<UserSettings>) => void) {
+  try {
+    const text = await navigator.clipboard.readText();
+    onSettingsChange({ address: text.trim() });
+  } catch {
+    // Silence clipboard permission errors in Safari/PWA contexts.
+  }
+}
+
+function shortAddress(address: string): string {
+  return address.length >= 10 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
 }
 
 function exportCsv(fills: Fill[], complete: boolean) {
