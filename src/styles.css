@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   --bg: #07111f;
   --bg-elevated: rgba(13, 27, 44, 0.88);
   --panel: rgba(14, 25, 40, 0.92);
@@ -621,5 +621,92 @@ details summary {
 
   .nav-button span:last-child {
     font-size: 0.72rem;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  body {
+    background: #07111f;
+    color: #eef4ff;
+  }
+
+  .app-shell,
+  .page-stack {
+    position: relative;
+    z-index: 1;
+  }
+
+  .card,
+  .bottom-nav,
+  .eyebrow,
+  .network-pill,
+  .nav-button.active,
+  .banner,
+  .button.secondary,
+  .segmented-button,
+  .segmented-button.active,
+  .row-card,
+  .pill,
+  .info-tile,
+  .field input,
+  .field select,
+  .draft-input {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .card {
+    background: #111c2c;
+    border-color: rgba(170, 192, 219, 0.22);
+  }
+
+  .compact-card,
+  .metric-card,
+  .row-card,
+  .info-tile,
+  .field input,
+  .field select,
+  .draft-input,
+  .button.secondary,
+  .segmented-button,
+  .bottom-nav,
+  .eyebrow,
+  .network-pill,
+  .pill {
+    background: #162337;
+  }
+
+  .banner {
+    background: rgba(217, 134, 31, 0.16);
+  }
+
+  .nav-button.active {
+    background: #2a3446;
+  }
+
+  .metric-label,
+  .caption,
+  .subtle,
+  .nav-button,
+  .app-header p,
+  .eyebrow,
+  .network-pill {
+    color: #c8d6ea;
+  }
+
+  .metric-value,
+  .line strong,
+  .line span,
+  .card h2,
+  .section-title h2,
+  .subpage-header h2,
+  .app-header h1,
+  .row-card,
+  .button.secondary,
+  .segmented-button,
+  .field input,
+  .field select,
+  .draft-input {
+    color: #eef4ff;
   }
 }
