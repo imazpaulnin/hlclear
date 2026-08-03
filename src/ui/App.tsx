@@ -4,6 +4,8 @@ import { coverageWindowLabel, formatMaybeMoney, labelCoverage, labelRawFee } fro
 import { dec } from "../domain/decimal";
 import { buildDashboard } from "../domain/dashboard";
 import { createEmptyState, loadStoredState, persistState } from "../domain/storage";
+import { useWalletConnection } from "../wallet/useWalletConnection";
+import { walletStatusLabel } from "../wallet/walletUtils";
 import type {
   DashboardPresentation,
   Fill,
@@ -16,7 +18,7 @@ import type {
 } from "../domain/types";
 
 type TabKey = "summary" | "positions" | "history" | "more";
-type MorePanel = "menu" | "movements" | "settings" | "methodology" | "audit" | "api";
+type MorePanel = "menu" | "movements" | "settings" | "wallet" | "methodology" | "audit" | "api";
 
 const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "positions" | "history" | "more" }> = [
   { key: "summary", label: "Resumen", icon: "summary" },
@@ -37,6 +39,7 @@ export function App() {
   const [corsStatus, setCorsStatus] = useState<string>("Pendiente");
   const [auditMode, setAuditMode] = useState<boolean>(() => new URLSearchParams(window.location.search).get("audit") === "1");
   const [advancedOpen, setAdvancedOpen] = useState<boolean>(() => new URLSearchParams(window.location.search).get("advanced") === "1");
+  const wallet = useWalletConnection(state.settings.address);
 
   const activeSnapshot = state.snapshots?.[state.settings.network];
 
@@ -182,6 +185,13 @@ export function App() {
             </div>
           )}
 
+          {wallet.mismatchWarning && (
+            <div className="card danger" role="alert">
+              <strong>Wallet distinta a la auditada</strong>
+              <div>{wallet.mismatchWarning}</div>
+            </div>
+          )}
+
           {dashboardState.error && (
             <div className="card danger" role="alert">
               <strong>Snapshot local incompatible</strong>
@@ -199,6 +209,7 @@ export function App() {
               dashboard={dashboard}
               settings={state.settings}
               snapshot={activeSnapshot}
+              wallet={wallet}
               auditMode={auditMode}
               advancedOpen={advancedOpen}
               syncState={syncState}
@@ -251,6 +262,9 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
   if (requestedTab === "settings") {
     return { tab: "more", morePanel: "settings" };
   }
+  if (requestedTab === "wallet") {
+    return { tab: "more", morePanel: "wallet" };
+  }
   if (requestedTab === "movements") {
     return { tab: "more", morePanel: "movements" };
   }
@@ -277,7 +291,7 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
 }
 
 function isMorePanel(value: string | null): value is MorePanel {
-  return value === "menu" || value === "movements" || value === "settings" || value === "methodology" || value === "audit" || value === "api";
+  return value === "menu" || value === "movements" || value === "settings" || value === "wallet" || value === "methodology" || value === "audit" || value === "api";
 }
 
 function Header({
@@ -579,6 +593,7 @@ function MoreTab({
   dashboard,
   settings,
   snapshot,
+  wallet,
   auditMode,
   advancedOpen,
   syncState,
@@ -595,6 +610,7 @@ function MoreTab({
   dashboard?: DashboardPresentation;
   settings: UserSettings;
   snapshot?: HyperliquidSnapshot;
+  wallet: ReturnType<typeof useWalletConnection>;
   auditMode: boolean;
   advancedOpen: boolean;
   syncState: SyncState;
@@ -621,6 +637,7 @@ function MoreTab({
   const sections = [
     { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
     { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
+    { key: "wallet" as const, label: "Wallet", description: "Conexion local para operativa manual futura." },
     { key: "api" as const, label: "Diagnostico API", description: "Payload exacto y respuesta exacta de /info." },
     ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
     { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
@@ -793,6 +810,13 @@ function MoreTab({
         </>
       )}
 
+      {panel === "wallet" && (
+        <>
+          <SubpageHeader title="Wallet" onBack={() => onSelectPanel("menu")} />
+          <WalletPanel wallet={wallet} auditAddress={settings.address} />
+        </>
+      )}
+
       {panel === "methodology" && (
         <>
           <SubpageHeader title="Metodologia" onBack={() => onSelectPanel("menu")} />
@@ -820,6 +844,99 @@ function MoreTab({
         </>
       )}
     </section>
+  );
+}
+
+function WalletPanel({
+  wallet,
+  auditAddress
+}: {
+  wallet: ReturnType<typeof useWalletConnection>;
+  auditAddress: string;
+}) {
+  const connectedAddress = wallet.state.address;
+  const availableWallets = wallet.availableWallets.filter((option) => option.available);
+  const unavailableWallets = wallet.availableWallets.filter((option) => !option.available);
+
+  return (
+    <div className="stack">
+      <div className="card compact-card stack dense-stack">
+        <h2>Estado de conexion</h2>
+        <Line label="Estado de conexion" value={walletStatusLabel(wallet.state.status)} />
+        <Line label="Wallet conectada" value={wallet.state.connectorName ?? "Ninguna"} />
+        <Line label="Direccion conectada" value={connectedAddress ?? "Sin conectar"} />
+        <Line label="Red actual" value={wallet.state.networkLabel} />
+        <Line label="Direccion auditada" value={auditAddress || "Sin definir"} />
+        <Line
+          label="Coincidencia"
+          value={
+            wallet.auditAddressMatches === undefined
+              ? "Pendiente"
+              : wallet.auditAddressMatches
+                ? "Coincide"
+                : "No coincide"
+          }
+          highlight={wallet.auditAddressMatches === false ? "warning" : undefined}
+        />
+
+        {wallet.mismatchWarning && (
+          <div className="card danger" role="alert">
+            <strong>Aviso visible</strong>
+            <div>{wallet.mismatchWarning}</div>
+          </div>
+        )}
+
+        {wallet.state.error && (
+          <div className="card danger" role="alert">
+            <strong>Error de conexion</strong>
+            <div>{wallet.state.error}</div>
+          </div>
+        )}
+
+        <div className="input-actions">
+          <button className="button full-width" type="button" onClick={() => void wallet.connect()} disabled={wallet.state.status === "connecting"}>
+            {wallet.state.status === "connecting" ? "Conectando..." : "Conectar wallet"}
+          </button>
+          <button
+            className="button secondary full-width"
+            type="button"
+            onClick={() => void wallet.disconnect()}
+            disabled={wallet.state.status !== "connected"}
+          >
+            Desconectar
+          </button>
+        </div>
+      </div>
+
+      <div className="card compact-card stack dense-stack">
+        <h2>Wallets disponibles</h2>
+        {availableWallets.length === 0 ? (
+          <div className="caption">No se detecto ninguna wallet compatible en este navegador.</div>
+        ) : (
+          availableWallets.map((option) => (
+            <button
+              key={`${option.id}-${option.source}`}
+              className="button secondary full-width"
+              type="button"
+              onClick={() => void wallet.connectWith(option.id)}
+              disabled={wallet.state.status === "connecting"}
+            >
+              {option.preferred ? `Conectar ${option.name} recomendado` : `Conectar ${option.name}`}
+            </button>
+          ))
+        )}
+        <div className="caption">La clave privada no sale del dispositivo. Esta fase solo prepara la conexion local.</div>
+      </div>
+
+      {unavailableWallets.length > 0 && (
+        <div className="card compact-card stack dense-stack">
+          <h2>No disponibles</h2>
+          {unavailableWallets.map((option) => (
+            <Line key={`${option.id}-${option.source}`} label={option.name} value={option.reasonUnavailable ?? "No disponible"} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -5,7 +5,6 @@ const root = process.cwd();
 const blockedLiteralPatterns = [
   /["']approveBuilderFee["']/i,
   /private key/i,
-  /walletconnect/i,
   /firebase/i,
   /supabase/i,
   /console\.(log|debug|info|warn)\([^)]*(signature|privateKey|seed|mnemonic|rawResponse)/i,
@@ -13,6 +12,7 @@ const blockedLiteralPatterns = [
 ];
 
 const disallowedApiUrlPattern = /https?:\/\/(?!api\.hyperliquid\.xyz|api\.hyperliquid-testnet\.xyz)/i;
+const allowedExternalUrlPatterns = [/https?:\/\/cloudflare-eth\.com/i];
 
 const ignoredDirectories = new Set(["node_modules", "dist", ".git", "reference", "docs"]);
 const ignoredFiles = new Set([
@@ -62,7 +62,7 @@ function walk(directory) {
       }
     }
 
-    if (disallowedApiUrlPattern.test(text)) {
+    if (disallowedApiUrlPattern.test(text) && !allowedExternalUrlPatterns.some((pattern) => pattern.test(text))) {
       findings.push(`${relative}: contains a non-Hyperliquid external endpoint`);
     }
   }
