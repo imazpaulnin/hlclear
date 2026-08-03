@@ -1,5 +1,6 @@
 (() => {
   const root = document.getElementById("root");
+  const STARTUP_TIMEOUT_MS = 3000;
 
   function renderStartupError(title, message) {
     if (!root || window.__hlclearBooted) {
@@ -33,4 +34,15 @@
   window.addEventListener("unhandledrejection", () => {
     renderStartupError("Error al iniciar la aplicacion", "Se produjo un fallo no controlado durante el arranque.");
   });
+
+  window.setTimeout(() => {
+    if (!root || window.__hlclearBooted) {
+      return;
+    }
+
+    renderStartupError(
+      "Error al iniciar la aplicacion",
+      "La interfaz no ha terminado de arrancar en este navegador."
+    );
+  }, STARTUP_TIMEOUT_MS);
 })();

@@ -10,7 +10,7 @@ export default defineConfig({
     port: 4173
   },
   build: {
-    target: "safari14",
+    target: "es2019",
     sourcemap: false
   },
   test: {
