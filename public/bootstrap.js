@@ -1,5 +1,6 @@
 (() => {
   const root = document.getElementById("root");
+  const CACHE_RESET_PARAM = "cache-reset";
   const STARTUP_TIMEOUT_MS = 3000;
 
   function renderStartupError(title, message) {
@@ -35,6 +36,8 @@
     renderStartupError("Error al iniciar la aplicacion", "Se produjo un fallo no controlado durante el arranque.");
   });
 
+  void cleanupStaleClients();
+
   window.setTimeout(() => {
     if (!root || window.__hlclearBooted) {
       return;
@@ -45,4 +48,53 @@
       "La interfaz no ha terminado de arrancar en este navegador."
     );
   }, STARTUP_TIMEOUT_MS);
+
+  async function cleanupStaleClients() {
+    try {
+      let changed = false;
+
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(async (registration) => {
+            const scope = registration.scope ?? "";
+            const scriptUrl =
+              registration.active?.scriptURL ?? registration.waiting?.scriptURL ?? registration.installing?.scriptURL ?? "";
+
+            if (scope.includes("/hlclear/") || scriptUrl.includes("/hlclear/")) {
+              changed = (await registration.unregister()) || changed;
+            }
+          })
+        );
+      }
+
+      if ("caches" in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(
+          cacheKeys.map(async (cacheKey) => {
+            if (cacheKey.startsWith("hlclear-")) {
+              changed = (await caches.delete(cacheKey)) || changed;
+            }
+          })
+        );
+      }
+
+      if (!changed) {
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      if (url.searchParams.get(CACHE_RESET_PARAM) === "1") {
+        return;
+      }
+
+      url.searchParams.set(CACHE_RESET_PARAM, "1");
+      window.location.replace(url.toString());
+    } catch {
+      renderStartupError(
+        "Error al limpiar la caché",
+        "El navegador mantiene archivos antiguos y no se ha podido forzar la recarga."
+      );
+    }
+  }
 })();

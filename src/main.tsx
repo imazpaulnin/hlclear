@@ -1,19 +1,26 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./ui/App";
-import { registerServiceWorker } from "./pwa/registerServiceWorker";
 import "./styles.css";
 
-(
-  window as Window & {
-    __hlclearBooted?: boolean;
-  }
-).__hlclearBooted = true;
+const startupWindow = window as Window & {
+  __hlclearBooted?: boolean;
+};
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+const rootElement = document.getElementById("root");
+
+if (!rootElement) {
+  throw new Error("Root element not found");
+}
+
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
 
-registerServiceWorker();
+window.requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
+    startupWindow.__hlclearBooted = true;
+  });
+});
