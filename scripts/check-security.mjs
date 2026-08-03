@@ -19,9 +19,9 @@ const ignoredFiles = new Set([
   "README.md",
   "AGENTS.md",
   "package-lock.json",
-  "scripts\\check-security.mjs",
-  "scripts\\serve-dist.mjs",
-  ".github\\workflows\\deploy-pages.yml"
+  "scripts/check-security.mjs",
+  "scripts/serve-dist.mjs",
+  ".github/workflows/deploy-pages.yml"
 ]);
 
 const findings = [];
@@ -50,7 +50,7 @@ function walk(directory) {
       continue;
     }
 
-    const relative = path.relative(root, absolute);
+    const relative = path.relative(root, absolute).split(path.sep).join("/");
     if (ignoredFiles.has(relative)) {
       continue;
     }
