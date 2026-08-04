@@ -12,7 +12,14 @@ const blockedLiteralPatterns = [
 ];
 
 const disallowedApiUrlPattern = /https?:\/\/(?!api\.hyperliquid\.xyz|api\.hyperliquid-testnet\.xyz)/i;
-const allowedExternalUrlPatterns = [/https?:\/\/cloudflare-eth\.com/i];
+const allowedExternalUrlPatterns = [
+  /https?:\/\/cloudflare-eth\.com/i,
+  /https?:\/\/rpc\.hyperliquid\.xyz/i,
+  /https?:\/\/rpc\.hyperliquid-testnet\.xyz/i,
+  /https?:\/\/app\.hyperliquid-testnet\.xyz/i,
+  /https?:\/\/app\.hyperliquid\.xyz/i,
+  /wss:\/\/relay\.walletconnect\.org/i
+];
 
 const ignoredDirectories = new Set(["node_modules", "dist", ".git", "reference", "docs"]);
 const ignoredFiles = new Set([

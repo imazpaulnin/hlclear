@@ -31,6 +31,8 @@ describe("walletUtils", () => {
 
   it("formats known and unknown chain ids", () => {
     expect(formatWalletNetwork("0x1")).toBe("Ethereum Mainnet (0x1)");
+    expect(formatWalletNetwork("0x3e6")).toBe("Hyperliquid Testnet (0x3e6)");
+    expect(formatWalletNetwork("0x3e7")).toBe("Hyperliquid Mainnet (0x3e7)");
     expect(formatWalletNetwork("0x999")).toBe("0x999");
     expect(formatWalletNetwork(undefined)).toBe("Sin red");
   });

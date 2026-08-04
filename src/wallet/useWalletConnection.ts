@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createConnector, prepareWalletConnectConnector, type WalletConnector } from "./connectors";
+import { createConnector, prepareWalletConnectConnector, resetWalletConnectConnector, type WalletConnector } from "./connectors";
 import { shouldPreferWalletConnect } from "./walletEnvironment";
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
-import { hasWalletConnectProjectId } from "./walletConfig";
+import {
+  HYPERLIQUID_TESTNET_CAIP,
+  REOWN_APPKIT_VERSION,
+  WALLETCONNECT_CORE_VERSION,
+  WALLETCONNECT_RELAY_URL,
+  hasWalletConnectProjectId,
+  maskWalletConnectProjectId,
+  getWalletConnectProjectId
+} from "./walletConfig";
 import { addressesMatch, formatWalletNetwork, pickPreferredWallet } from "./walletUtils";
 
 type UseWalletConnectionResult = {
@@ -20,9 +28,7 @@ type UseWalletConnectionResult = {
 
 export function useWalletConnection(auditAddress: string): UseWalletConnectionResult {
   const [availableWallets, setAvailableWallets] = useState<WalletOption[]>(() => [buildWalletConnectOption()]);
-  const [debugLogs, setDebugLogs] = useState<string[]>(() =>
-    import.meta.env.DEV ? [`${formatDebugTimestamp()} WalletConnect projectId cargado: ${hasWalletConnectProjectId() ? "si" : "no"}`] : []
-  );
+  const [debugLogs, setDebugLogs] = useState<string[]>(() => (import.meta.env.DEV ? buildInitialDebugLogs() : []));
   const [state, setState] = useState<WalletControllerState>({
     status: "disconnected",
     networkLabel: "Sin red"
@@ -36,7 +42,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       return;
     }
 
-    setDebugLogs((current) => [...current.slice(-19), `${formatDebugTimestamp()} ${message}`]);
+    setDebugLogs((current) => [...current.slice(-199), `${formatDebugTimestamp()} ${message}`]);
   }
 
   useEffect(() => {
@@ -71,7 +77,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
 
     appendDebugLog("Se prepara WalletConnect en segundo plano para iPhone Safari.");
     void prepareWalletConnectConnector((message) => appendDebugLog(message)).catch((error) => {
-      appendDebugLog(`Error al preparar WalletConnect: ${error instanceof Error ? error.message : "desconocido"}`);
+      appendDebugLog(`Error al preparar WalletConnect: ${formatErrorForDebug(error)}`);
     });
   }, []);
 
@@ -105,7 +111,10 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       applyConnectedSession(session);
       appendDebugLog(`Conexion completada con ${wallet.name}.`);
     } catch (error) {
-      appendDebugLog(`Fallo de conexion: ${error instanceof Error ? error.message : "desconocido"}`);
+      appendDebugLog(`Fallo de conexion: ${formatErrorForDebug(error)}`);
+      if (wallet.id === "walletconnect") {
+        await resetWalletConnectConnector("fallo visible en pantalla");
+      }
       setState((current) => ({
         ...current,
         status: "error",
@@ -286,4 +295,35 @@ function mergeWalletOptions(options: WalletOption[]): WalletOption[] {
 
 function formatDebugTimestamp(): string {
   return new Date().toLocaleTimeString("es-ES", { hour12: false });
+}
+
+function buildInitialDebugLogs(): string[] {
+  const projectId = getWalletConnectProjectId();
+
+  return [
+    `${formatDebugTimestamp()} Version Reown AppKit: ${REOWN_APPKIT_VERSION}`,
+    `${formatDebugTimestamp()} Version WalletConnect: ${WALLETCONNECT_CORE_VERSION}`,
+    `${formatDebugTimestamp()} WalletConnect projectId: ${maskWalletConnectProjectId(projectId)}`,
+    `${formatDebugTimestamp()} Relay: ${WALLETCONNECT_RELAY_URL}`,
+    `${formatDebugTimestamp()} Chain solicitada: ${HYPERLIQUID_TESTNET_CAIP}`,
+    `${formatDebugTimestamp()} Estado inicial: ${hasWalletConnectProjectId() ? "projectId disponible" : "projectId ausente"}`
+  ];
+}
+
+function formatErrorForDebug(error: unknown): string {
+  if (error instanceof Error) {
+    return JSON.stringify(
+      {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        cause: error.cause,
+        code: (error as Error & { code?: unknown }).code
+      },
+      null,
+      2
+    );
+  }
+
+  return JSON.stringify(error, null, 2);
 }

@@ -6,7 +6,9 @@ const KNOWN_NETWORKS: Record<string, string> = {
   "0xa4b1": "Arbitrum One",
   "0x2105": "Base",
   "0x89": "Polygon",
-  "0xaa36a7": "Sepolia"
+  "0xaa36a7": "Sepolia",
+  "0x3e6": "Hyperliquid Testnet",
+  "0x3e7": "Hyperliquid Mainnet"
 };
 
 export function normalizeAddress(address?: string | null): string | undefined {
