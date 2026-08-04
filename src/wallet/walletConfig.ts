@@ -95,12 +95,18 @@ export function getWalletMetadata() {
   const basePath = import.meta.env.BASE_URL || "/";
   const appUrl = typeof window !== "undefined" ? new URL(basePath, origin).toString() : `${origin}/`;
   const iconPath = typeof window !== "undefined" ? new URL(`icons/icon-192.png`, appUrl).toString() : `${origin}/icons/icon-192.png`;
+  const redirect = getWalletConnectRedirectConfig();
 
   return {
     name: "HLClear",
     description: "Cliente movil de Hyperliquid con auditoria financiera completa y ejecucion manual.",
     url: appUrl,
-    icons: [iconPath]
+    icons: [iconPath],
+    redirect: {
+      universal: redirect.universal ?? undefined,
+      native: redirect.native ?? undefined,
+      linkMode: redirect.linkMode
+    }
   };
 }
 
@@ -112,9 +118,14 @@ export function getWalletConnectLocation() {
 }
 
 export function getWalletConnectRedirectConfig() {
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://imazpaulnin.github.io";
+  const basePath = import.meta.env.BASE_URL || "/";
+  const appUrl = new URL(basePath, `${origin}/`).toString();
+
   return {
-    configured: false,
+    configured: true,
     native: null,
-    universal: null
+    universal: appUrl,
+    linkMode: true
   };
 }
