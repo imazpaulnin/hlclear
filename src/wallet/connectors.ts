@@ -9,8 +9,11 @@ import {
   WALLETCONNECT_CORE_VERSION,
   WALLETCONNECT_RELAY_URL,
   getWalletConnectProjectId,
+  getWalletConnectRedirectConfig,
+  getWalletConnectLocation,
   getWalletMetadata,
-  maskWalletConnectProjectId
+  maskWalletConnectProjectId,
+  validateWalletConnectProjectId
 } from "./walletConfig";
 import { parseWalletConnectAccount } from "./walletUtils";
 
@@ -18,6 +21,46 @@ type WalletDebugLogger = (message: string) => void;
 
 type WalletConnectSessionEnvelope = Awaited<ReturnType<UniversalConnector["connect"]>>;
 type WalletConnectSession = WalletConnectSessionEnvelope["session"];
+type WalletConnectEventEntry = {
+  at: string;
+  event: string;
+  payload: unknown;
+};
+
+type WalletConnectDiagnosticsSnapshot = {
+  sdkVersions: {
+    walletConnect: string;
+    reown: string;
+  };
+  projectId: {
+    masked: string;
+    validation: ReturnType<typeof validateWalletConnectProjectId>;
+  };
+  relayUrl: string;
+  metadata: ReturnType<typeof getWalletMetadata>;
+  redirect: ReturnType<typeof getWalletConnectRedirectConfig>;
+  location: ReturnType<typeof getWalletConnectLocation>;
+  chainId: {
+    caip: string;
+    hex: string;
+    numeric: number;
+  };
+  requiredNamespaces: Record<string, unknown> | null;
+  optionalNamespaces: ReturnType<typeof buildWalletConnectNamespaces>;
+  connectPayload: {
+    requiredNamespaces: Record<string, unknown> | null;
+    optionalNamespaces: ReturnType<typeof buildWalletConnectNamespaces>;
+  };
+  initializationState: {
+    initialized: boolean;
+    lastKnownProviderState: unknown;
+  };
+  lastResponse: unknown;
+  lastError: unknown;
+  lastHttpResponse: unknown;
+  lastRelayJson: unknown;
+  events: WalletConnectEventEntry[];
+};
 
 export interface WalletConnector {
   readonly id: WalletConnectorId;
@@ -130,6 +173,23 @@ export function createConnector(option: WalletOption, debug?: WalletDebugLogger)
 let walletConnectConnectorPromise: Promise<UniversalConnector> | undefined;
 let walletConnectConnectorInstance: UniversalConnector | undefined;
 const walletConnectDebugLoggers = new Set<WalletDebugLogger>();
+const walletConnectDiagnosticsState: {
+  lastResponse: unknown;
+  lastError: unknown;
+  lastHttpResponse: unknown;
+  lastRelayJson: unknown;
+  events: WalletConnectEventEntry[];
+  initialized: boolean;
+  lastKnownProviderState: unknown;
+} = {
+  lastResponse: null,
+  lastError: null,
+  lastHttpResponse: null,
+  lastRelayJson: null,
+  events: [],
+  initialized: false,
+  lastKnownProviderState: null
+};
 
 export function prepareWalletConnectConnector(debug?: WalletDebugLogger): Promise<UniversalConnector> {
   registerWalletConnectDebugLogger(debug);
@@ -164,22 +224,38 @@ export async function resetWalletConnectConnector(reason: string): Promise<void>
 async function initializeWalletConnectConnector(debug?: WalletDebugLogger): Promise<UniversalConnector> {
   registerWalletConnectDebugLogger(debug);
   const projectId = getWalletConnectProjectId();
+  const metadata = getWalletMetadata();
+  const redirect = getWalletConnectRedirectConfig();
+  const location = getWalletConnectLocation();
+  const optionalNamespaces = buildWalletConnectNamespaces();
+  const projectValidation = validateWalletConnectProjectId(projectId);
+
   emitWalletConnectDebug(`WalletConnect projectId cargado: ${projectId ? maskWalletConnectProjectId(projectId) : "no"}`);
+  emitWalletConnectDebug(`Validacion Project ID: ${safeJsonStringify(projectValidation)}`);
 
   if (!projectId) {
     throw new Error("WalletConnect requiere VITE_WALLETCONNECT_PROJECT_ID en despliegue.");
   }
 
+  if (!projectValidation.valid) {
+    throw new Error(`WalletConnect Project ID invalido: ${projectValidation.reasons.join(" ")}`);
+  }
+
   emitWalletConnectDebug(`Version Reown AppKit: ${REOWN_APPKIT_VERSION}`);
   emitWalletConnectDebug(`Version WalletConnect: ${WALLETCONNECT_CORE_VERSION}`);
   emitWalletConnectDebug(`Relay configurado: ${WALLETCONNECT_RELAY_URL}`);
+  emitWalletConnectDebug(`Metadata completa: ${safeJsonStringify(metadata)}`);
+  emitWalletConnectDebug(`Redirect configurado: ${safeJsonStringify(redirect)}`);
+  emitWalletConnectDebug(`window.location: ${safeJsonStringify(location)}`);
   emitWalletConnectDebug(`Chain solicitada: ${HYPERLIQUID_TESTNET_CAIP} (${HYPERLIQUID_TESTNET_CHAIN_HEX})`);
-  emitWalletConnectDebug(`Namespaces enviados: ${safeJsonStringify({ optionalNamespaces: buildWalletConnectNamespaces() })}`);
+  emitWalletConnectDebug(`requiredNamespaces: ${safeJsonStringify(null)}`);
+  emitWalletConnectDebug(`optionalNamespaces: ${safeJsonStringify(optionalNamespaces)}`);
+  emitWalletConnectDebug(`Payload exacto de connect(): ${safeJsonStringify({ requiredNamespaces: null, optionalNamespaces })}`);
   emitWalletConnectDebug("Inicializando WalletConnect...");
 
   const connector = await UniversalConnector.init({
     projectId,
-    metadata: getWalletMetadata(),
+    metadata,
     networks: [evmWalletConnectNamespace],
     providerConfig: {
       logger: import.meta.env.DEV ? "info" : "error",
@@ -189,7 +265,9 @@ async function initializeWalletConnectConnector(debug?: WalletDebugLogger): Prom
 
   walletConnectConnectorInstance = connector;
   attachWalletConnectDebugEvents(connector);
-  emitWalletConnectDebug(`Estado de inicializacion: ${describeWalletConnectState(connector)}`);
+  walletConnectDiagnosticsState.initialized = true;
+  walletConnectDiagnosticsState.lastKnownProviderState = describeWalletConnectState(connector);
+  emitWalletConnectDebug(`Estado de inicializacion: ${safeJsonStringify(walletConnectDiagnosticsState.lastKnownProviderState)}`);
 
   const restoredSession = getExistingWalletConnectSession(connector);
   if (restoredSession) {
@@ -252,6 +330,7 @@ function buildWalletConnectNamespaces() {
 async function connectWalletConnectSession(connector: UniversalConnector): Promise<WalletConnectSessionEnvelope> {
   emitWalletConnectDebug("Se intenta abrir el modal oficial de WalletConnect.");
   const response = await connector.connect();
+  walletConnectDiagnosticsState.lastResponse = serializeUnknownError(response);
   emitWalletConnectDebug(`Estado despues de connect(): ${describeWalletConnectState(connector)}`);
   emitWalletConnectDebug(`Respuesta completa de WalletConnect: ${safeJsonStringify(response)}`);
   return response;
@@ -316,7 +395,16 @@ function attachWalletConnectDebugEvents(connector: UniversalConnector) {
 
   (["display_uri", "session_proposal", "session_request", "session_delete", "session_update"] as const).forEach((eventName) => {
     provider.on?.(eventName, (...args: unknown[]) => {
-      emitWalletConnectDebug(`Evento ${eventName}: ${safeJsonStringify(args.length <= 1 ? args[0] : args)}`);
+      const payload = args.length <= 1 ? args[0] : args;
+      walletConnectDiagnosticsState.events = [
+        ...walletConnectDiagnosticsState.events.slice(-49),
+        {
+          at: new Date().toISOString(),
+          event: eventName,
+          payload: serializeUnknownError(payload)
+        }
+      ];
+      emitWalletConnectDebug(`Evento ${eventName}: ${safeJsonStringify(payload)}`);
     });
   });
 }
@@ -344,17 +432,11 @@ function describeWalletConnectState(connector: UniversalConnector): string {
 }
 
 function formatWalletConnectError(error: unknown): string {
-  if (error instanceof Error) {
-    return safeJsonStringify({
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      cause: error.cause,
-      code: getErrorCode(error)
-    });
-  }
-
-  return safeJsonStringify(error);
+  const serialized = serializeUnknownError(error);
+  walletConnectDiagnosticsState.lastError = serialized;
+  walletConnectDiagnosticsState.lastHttpResponse = extractCandidateField(serialized, ["response", "httpResponse"]);
+  walletConnectDiagnosticsState.lastRelayJson = extractCandidateField(serialized, ["data", "json", "body", "result"]);
+  return safeJsonStringify(serialized);
 }
 
 function getErrorCode(error: Error): unknown {
@@ -386,4 +468,109 @@ function safeJsonStringify(value: unknown): string {
     },
     2
   );
+}
+
+function serializeUnknownError(value: unknown): unknown {
+  return serializeValue(value, new WeakSet<object>());
+}
+
+function serializeValue(value: unknown, seen: WeakSet<object>): unknown {
+  if (value instanceof Error) {
+    const output: Record<string, unknown> = {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+      cause: serializeValue(value.cause, seen),
+      code: getErrorCode(value)
+    };
+
+    for (const key of Object.getOwnPropertyNames(value)) {
+      output[key] = serializeValue((value as unknown as Record<string, unknown>)[key], seen);
+    }
+
+    return output;
+  }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (typeof value === "function") {
+    return `[Function ${value.name || "anonymous"}]`;
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => serializeValue(entry, seen));
+  }
+
+  const output: Record<string, unknown> = {};
+  for (const key of Object.getOwnPropertyNames(value)) {
+    output[key] = serializeValue((value as Record<string, unknown>)[key], seen);
+  }
+
+  return output;
+}
+
+function extractCandidateField(source: unknown, keys: string[]): unknown {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const sourceRecord = source as Record<string, unknown>;
+  for (const key of keys) {
+    if (key in sourceRecord) {
+      return sourceRecord[key];
+    }
+  }
+
+  return null;
+}
+
+export function getWalletConnectDiagnosticsSnapshot(): WalletConnectDiagnosticsSnapshot {
+  const projectId = getWalletConnectProjectId();
+
+  return {
+    sdkVersions: {
+      walletConnect: WALLETCONNECT_CORE_VERSION,
+      reown: REOWN_APPKIT_VERSION
+    },
+    projectId: {
+      masked: maskWalletConnectProjectId(projectId),
+      validation: validateWalletConnectProjectId(projectId)
+    },
+    relayUrl: WALLETCONNECT_RELAY_URL,
+    metadata: getWalletMetadata(),
+    redirect: getWalletConnectRedirectConfig(),
+    location: getWalletConnectLocation(),
+    chainId: {
+      caip: HYPERLIQUID_TESTNET_CAIP,
+      hex: HYPERLIQUID_TESTNET_CHAIN_HEX,
+      numeric: HYPERLIQUID_TESTNET_CHAIN_ID
+    },
+    requiredNamespaces: null,
+    optionalNamespaces: buildWalletConnectNamespaces(),
+    connectPayload: {
+      requiredNamespaces: null,
+      optionalNamespaces: buildWalletConnectNamespaces()
+    },
+    initializationState: {
+      initialized: walletConnectDiagnosticsState.initialized,
+      lastKnownProviderState: walletConnectDiagnosticsState.lastKnownProviderState
+    },
+    lastResponse: walletConnectDiagnosticsState.lastResponse,
+    lastError: walletConnectDiagnosticsState.lastError,
+    lastHttpResponse: walletConnectDiagnosticsState.lastHttpResponse,
+    lastRelayJson: walletConnectDiagnosticsState.lastRelayJson,
+    events: walletConnectDiagnosticsState.events
+  };
 }

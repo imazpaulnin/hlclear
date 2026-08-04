@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createConnector, prepareWalletConnectConnector, resetWalletConnectConnector, type WalletConnector } from "./connectors";
+import { createConnector, getWalletConnectDiagnosticsSnapshot, prepareWalletConnectConnector, resetWalletConnectConnector, type WalletConnector } from "./connectors";
 import { shouldPreferWalletConnect } from "./walletEnvironment";
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
@@ -21,6 +21,7 @@ type UseWalletConnectionResult = {
   mismatchWarning: string | undefined;
   connectedProvider: Eip1193Provider | null;
   debugLogs: string[];
+  debugReport: unknown;
   connect: () => Promise<void>;
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
   disconnect: () => Promise<void>;
@@ -28,7 +29,7 @@ type UseWalletConnectionResult = {
 
 export function useWalletConnection(auditAddress: string): UseWalletConnectionResult {
   const [availableWallets, setAvailableWallets] = useState<WalletOption[]>(() => [buildWalletConnectOption()]);
-  const [debugLogs, setDebugLogs] = useState<string[]>(() => (import.meta.env.DEV ? buildInitialDebugLogs() : []));
+  const [debugLogs, setDebugLogs] = useState<string[]>(() => buildInitialDebugLogs());
   const [state, setState] = useState<WalletControllerState>({
     status: "disconnected",
     networkLabel: "Sin red"
@@ -38,10 +39,6 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   const detachListenersRef = useRef<(() => void) | null>(null);
 
   function appendDebugLog(message: string) {
-    if (!import.meta.env.DEV) {
-      return;
-    }
-
     setDebugLogs((current) => [...current.slice(-199), `${formatDebugTimestamp()} ${message}`]);
   }
 
@@ -264,6 +261,10 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     mismatchWarning,
     connectedProvider: connectedProviderRef.current,
     debugLogs,
+    debugReport: {
+      ...getWalletConnectDiagnosticsSnapshot(),
+      logs: debugLogs
+    },
     connect,
     connectWith,
     disconnect

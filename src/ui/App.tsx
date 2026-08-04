@@ -19,7 +19,7 @@ import type {
 } from "../domain/types";
 
 type TabKey = "summary" | "trade" | "positions" | "history" | "more";
-type MorePanel = "menu" | "movements" | "settings" | "wallet" | "methodology" | "audit" | "api";
+type MorePanel = "menu" | "movements" | "settings" | "wallet" | "debug" | "methodology" | "audit" | "api";
 
 const primaryTabs: Array<{ key: TabKey; label: string; icon: "summary" | "trade" | "positions" | "history" | "more" }> = [
   { key: "summary", label: "Resumen", icon: "summary" },
@@ -279,6 +279,9 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
   if (requestedTab === "wallet") {
     return { tab: "more", morePanel: "wallet" };
   }
+  if (requestedTab === "debug") {
+    return { tab: "more", morePanel: "debug" };
+  }
   if (requestedTab === "movements") {
     return { tab: "more", morePanel: "movements" };
   }
@@ -305,7 +308,7 @@ function resolveInitialNavigation(): { tab: TabKey; morePanel: MorePanel } {
 }
 
 function isMorePanel(value: string | null): value is MorePanel {
-  return value === "menu" || value === "movements" || value === "settings" || value === "wallet" || value === "methodology" || value === "audit" || value === "api";
+  return value === "menu" || value === "movements" || value === "settings" || value === "wallet" || value === "debug" || value === "methodology" || value === "audit" || value === "api";
 }
 
 function Header({
@@ -652,6 +655,7 @@ function MoreTab({
     { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
     { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
     { key: "wallet" as const, label: "Wallet", description: "Conexion local para operativa manual futura." },
+    { key: "debug" as const, label: "Debug", description: "Diagnostico completo de WalletConnect." },
     { key: "api" as const, label: "Diagnostico API", description: "Payload exacto y respuesta exacta de /info." },
     ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
     { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
@@ -843,6 +847,13 @@ function MoreTab({
         </>
       )}
 
+      {panel === "debug" && (
+        <>
+          <SubpageHeader title="Debug WalletConnect" onBack={() => onSelectPanel("menu")} />
+          <WalletConnectDebugPanel wallet={wallet} />
+        </>
+      )}
+
       {panel === "methodology" && (
         <>
           <SubpageHeader title="Metodologia" onBack={() => onSelectPanel("menu")} />
@@ -975,6 +986,38 @@ function WalletPanel({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function WalletConnectDebugPanel({
+  wallet
+}: {
+  wallet: ReturnType<typeof useWalletConnection>;
+}) {
+  const report = wallet.debugReport;
+  const formatted = JSON.stringify(report, null, 2);
+
+  return (
+    <div className="stack">
+      <div className="card compact-card stack dense-stack">
+        <h2>Diagnostico completo</h2>
+        <div className="caption">Se muestra el diagnostico completo sin resumir para revisar Project ID, origen, metadata, namespaces, eventos y errores.</div>
+        <button className="button secondary full-width" type="button" onClick={() => void copyJson(report)}>
+          Copiar diagnostico
+        </button>
+      </div>
+
+      <div className="card compact-card stack dense-stack">
+        <Line label="Estado de conexion" value={walletStatusLabel(wallet.state.status)} />
+        <Line label="Direccion conectada" value={wallet.state.address ?? "Sin conectar"} />
+        <Line label="Red actual" value={wallet.state.networkLabel} />
+      </div>
+
+      <div className="card compact-card stack dense-stack">
+        <h2>Informe JSON</h2>
+        <JsonTextBlock value={formatted} />
+      </div>
     </div>
   );
 }
