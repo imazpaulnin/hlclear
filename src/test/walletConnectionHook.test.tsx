@@ -42,7 +42,18 @@ vi.mock("../wallet/connectors", () => ({
 
 vi.mock("../wallet/walletConfig", () => ({
   getWalletConnectProjectId: vi.fn(() => "b56e18d47c72ab683b10814fe9495694"),
-  maskWalletConnectProjectId: vi.fn(() => "b56e18…5694")
+  maskWalletConnectProjectId: vi.fn(() => "b56e18…5694"),
+  getWalletConnectCanonicalUrl: vi.fn(() => "https://imazpaulnin.github.io/hlclear/"),
+  getWalletConnectOrigin: vi.fn(() => "https://imazpaulnin.github.io"),
+  getWalletConnectRpcMap: vi.fn(() => ({ 1: "https://cloudflare-eth.com", 42161: "https://arb1.arbitrum.io/rpc" })),
+  getWalletMetadata: vi.fn(() => ({
+    name: "HLClear",
+    description: "Cliente movil de Hyperliquid con auditoria financiera y operativa manual.",
+    url: "https://imazpaulnin.github.io/hlclear/",
+    icons: ["https://imazpaulnin.github.io/hlclear/icons/icon-192.png"],
+    redirect: { universal: "https://imazpaulnin.github.io/hlclear/" }
+  })),
+  validateWalletConnectProjectId: vi.fn(() => ({ valid: true, reasons: [] }))
 }));
 
 function Harness({ auditAddress }: { auditAddress: string }) {

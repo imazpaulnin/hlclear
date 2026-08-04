@@ -5,6 +5,8 @@ const WALLETCONNECT_RPC_MAP = {
   42161: "https://arb1.arbitrum.io/rpc"
 } satisfies Record<number, string>;
 
+const PROJECT_ID_PATTERN = /^[a-f0-9]{32}$/i;
+
 export function getWalletConnectProjectId(): string | undefined {
   const configured = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
   if (configured) {
@@ -16,6 +18,30 @@ export function getWalletConnectProjectId(): string | undefined {
   }
 
   return undefined;
+}
+
+export function validateWalletConnectProjectId(projectId?: string) {
+  const reasons: string[] = [];
+  const normalized = projectId?.trim();
+
+  if (!normalized) {
+    reasons.push("No existe VITE_WALLETCONNECT_PROJECT_ID.");
+  } else {
+    if (/\s/.test(normalized)) {
+      reasons.push("El projectId contiene espacios.");
+    }
+    if (normalized.length !== 32) {
+      reasons.push(`La longitud del projectId es ${normalized.length} y deberia ser 32.`);
+    }
+    if (!PROJECT_ID_PATTERN.test(normalized)) {
+      reasons.push("El projectId no tiene formato hexadecimal de 32 caracteres.");
+    }
+  }
+
+  return {
+    valid: reasons.length === 0,
+    reasons
+  };
 }
 
 export function hasWalletConnectProjectId(): boolean {
@@ -43,7 +69,7 @@ export function maskWalletConnectProjectId(projectId?: string): string {
 }
 
 export function getWalletMetadata() {
-  const url = buildWalletConnectUrl();
+  const url = getWalletConnectCanonicalUrl();
 
   return {
     name: "HLClear",
@@ -56,14 +82,20 @@ export function getWalletMetadata() {
   };
 }
 
-function buildWalletConnectUrl(): string {
+export function getWalletConnectOrigin(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.location.origin;
+}
+
+export function getWalletConnectCanonicalUrl(): string {
   if (typeof window === "undefined") {
     return import.meta.env.BASE_URL || "/";
   }
 
-  const current = new URL(window.location.href);
-  current.hash = "";
-  return current.toString();
+  return new URL(import.meta.env.BASE_URL, window.location.origin).toString();
 }
 
 function buildWalletAssetUrl(pathname: string): string {

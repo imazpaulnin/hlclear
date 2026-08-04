@@ -9,7 +9,15 @@ import {
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
 import { isIosSafari } from "./walletEnvironment";
-import { getWalletConnectProjectId, maskWalletConnectProjectId } from "./walletConfig";
+import {
+  getWalletConnectCanonicalUrl,
+  getWalletConnectOrigin,
+  getWalletConnectProjectId,
+  getWalletConnectRpcMap,
+  getWalletMetadata,
+  maskWalletConnectProjectId,
+  validateWalletConnectProjectId
+} from "./walletConfig";
 import { addressesMatch, formatWalletNetwork, pickPreferredWallet } from "./walletUtils";
 
 type UseWalletConnectionResult = {
@@ -104,7 +112,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       setState((current) => ({
         ...current,
         status: "error",
-        error: error instanceof Error ? error.message : "No se pudo conectar la wallet."
+        error: describeConnectionError(error)
       }));
     }
   }
@@ -264,7 +272,13 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       wallets: availableWallets,
       walletConnect: {
         configured: Boolean(getWalletConnectProjectId()),
-        projectId: maskWalletConnectProjectId(getWalletConnectProjectId())
+        projectId: maskWalletConnectProjectId(getWalletConnectProjectId()),
+        validation: validateWalletConnectProjectId(getWalletConnectProjectId()),
+        origin: getWalletConnectOrigin(),
+        canonicalUrl: getWalletConnectCanonicalUrl(),
+        metadata: getWalletMetadata(),
+        rpcMap: getWalletConnectRpcMap(),
+        diagnosis: buildWalletConnectDiagnosis()
       },
       state,
       logs: debugLogs
@@ -286,6 +300,7 @@ function buildInitialDebugLogs(): string[] {
     `${formatDebugTimestamp()} URL: ${window.location.href}`,
     `${formatDebugTimestamp()} iPhone Safari: ${isIosSafari() ? "si" : "no"}`,
     `${formatDebugTimestamp()} WalletConnect projectId: ${maskWalletConnectProjectId(getWalletConnectProjectId())}`,
+    `${formatDebugTimestamp()} WalletConnect canonicalUrl: ${getWalletConnectCanonicalUrl()}`,
     `${formatDebugTimestamp()} Modo de conexion: wallet inyectada + WalletConnect`
   ];
 }
@@ -316,4 +331,40 @@ function formatErrorForDebug(error: unknown): string {
   }
 
   return JSON.stringify(error, null, 2);
+}
+
+function describeConnectionError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "No se pudo conectar la wallet.";
+  }
+
+  const message = error.message || "No se pudo conectar la wallet.";
+
+  if (/Failed to publish custom payload/i.test(message)) {
+    return [
+      "WalletConnect no pudo publicar la solicitud al relay.",
+      `Origen publicado: ${getWalletConnectOrigin() || "desconocido"}.`,
+      "Esto suele indicar un problema de dominio permitido en Reown Cloud, de acceso al relay desde la red del iPhone, o de una sesion WalletConnect corrupta.",
+      "No es un problema de allowlist por IP: Reown valida origen/aplicacion, no IP cliente."
+    ].join(" ");
+  }
+
+  return message;
+}
+
+function buildWalletConnectDiagnosis() {
+  return {
+    likelyCauses: [
+      "El hostname publicado no esta incluido exactamente en Project Domains de Reown Cloud.",
+      "El relay de WalletConnect esta bloqueado por la red, VPN, iCloud Private Relay o un filtro del dispositivo.",
+      "Existe una sesion WalletConnect antigua o corrupta en almacenamiento local."
+    ],
+    notLikelyCause: "Reown no requiere allowlist de IP para AppKit/Ethereum Provider cliente.",
+    nextChecks: [
+      "Verificar Project Domains en Reown Cloud con el hostname exacto imazpaulnin.github.io.",
+      "Esperar hasta 15 minutos despues de cambiar la allowlist de dominios.",
+      "Probar la PWA desde otra red o con iCloud Private Relay/VPN desactivados.",
+      "Usar el boton Limpiar estado de conexion y reintentar."
+    ]
+  };
 }
