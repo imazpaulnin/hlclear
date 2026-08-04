@@ -11,7 +11,7 @@ import { buildDashboard } from "../domain/dashboard";
 import { buildPositionCycles } from "../domain/cycles";
 import { dec } from "../domain/decimal";
 import { determineProfitStatus } from "../domain/profitStatus";
-import { getApiBaseUrl, getReadOnlyPayloads } from "../data/hyperliquidApi";
+import { getApiBaseUrl, getCorsProbePayloads, getReadOnlyPayloads } from "../data/hyperliquidApi";
 import type {
   AccountMode,
   ApiPosition,
@@ -348,6 +348,14 @@ describe("api configuration", () => {
     const payloads = getReadOnlyPayloads("0x0000000000000000000000000000000000000000", Date.now());
     expect(getApiBaseUrl("mainnet")).toBe("https://api.hyperliquid.xyz");
     expect(payloads).toHaveLength(12);
+  });
+
+  it("30b. la verificacion de CORS usa solo sondas ligeras", () => {
+    const payloads = getCorsProbePayloads("0x0000000000000000000000000000000000000000");
+    expect(payloads).toEqual([
+      { type: "metaAndAssetCtxs" },
+      { type: "userRole", user: "0x0000000000000000000000000000000000000000" }
+    ]);
   });
 });
 

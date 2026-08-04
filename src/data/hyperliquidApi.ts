@@ -34,6 +34,8 @@ const INTERNAL_PAGE_LIMIT = 64;
 
 export class HyperliquidApiError extends Error {}
 
+const RATE_LIMIT_RETRY_MS = 900;
+
 export async function fetchSnapshot(address: string, network: Network): Promise<HyperliquidSnapshot> {
   const baseUrl = API_URLS[network];
   const fetchedAt = new Date().toISOString();
@@ -139,6 +141,13 @@ export function getReadOnlyPayloads(address: string, endTime: number): Array<Rec
   ];
 }
 
+export function getCorsProbePayloads(address: string): Array<Record<string, unknown>> {
+  return [
+    { type: "metaAndAssetCtxs" },
+    { type: "userRole", user: address }
+  ];
+}
+
 async function postSafe(
   baseUrl: string,
   body: Record<string, unknown>,
@@ -159,17 +168,34 @@ async function postSafe(
 }
 
 async function post(baseUrl: string, body: Record<string, unknown>): Promise<unknown> {
+  return postWithRetry(baseUrl, body, 1);
+}
+
+async function postWithRetry(baseUrl: string, body: Record<string, unknown>, remainingRetries: number): Promise<unknown> {
   const response = await fetch(`${baseUrl}/info`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
 
+  if (response.status === 429 && remainingRetries > 0) {
+    await delay(RATE_LIMIT_RETRY_MS);
+    return postWithRetry(baseUrl, body, remainingRetries - 1);
+  }
+
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new HyperliquidApiError(`Hyperliquid esta limitando temporalmente las consultas. Espera unos segundos y vuelve a actualizar.`);
+    }
+
     throw new HyperliquidApiError(`HTTP ${response.status} al consultar ${String(body.type)}`);
   }
 
   return response.json();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 async function fetchPaginated(

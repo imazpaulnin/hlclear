@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchSnapshot, getApiBaseUrl, getReadOnlyPayloads, isAddressValid } from "../data/hyperliquidApi";
+import { fetchSnapshot, getApiBaseUrl, getCorsProbePayloads, getReadOnlyPayloads, isAddressValid } from "../data/hyperliquidApi";
 import { coverageWindowLabel, formatMaybeMoney, labelCoverage, labelRawFee } from "../domain/accounting";
 import { dec } from "../domain/decimal";
 import { buildDashboard } from "../domain/dashboard";
@@ -1372,7 +1372,7 @@ function formatDateTime(value: string | number): string {
 
 async function verifyCors(network: Network, address: string): Promise<string> {
   const endpoint = `${getApiBaseUrl(network)}/info`;
-  const payloads = getReadOnlyPayloads(isAddressValid(address) ? address : "0x0000000000000000000000000000000000000000", Date.now());
+  const payloads = getCorsProbePayloads(isAddressValid(address) ? address : "0x0000000000000000000000000000000000000000");
 
   try {
     for (const payload of payloads) {
