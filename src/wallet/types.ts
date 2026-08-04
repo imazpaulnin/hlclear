@@ -1,6 +1,6 @@
-export type WalletConnectorId = "metamask" | "rabby" | "walletconnect" | "injected";
+export type WalletConnectorId = "metamask" | "rabby" | "injected";
 
-export type WalletSource = "eip6963" | "window.ethereum" | "walletconnect";
+export type WalletSource = "eip6963" | "window.ethereum";
 
 export type WalletConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 

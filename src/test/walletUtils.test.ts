@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { WalletOption } from "../wallet/types";
-import {
-  addressesMatch,
-  formatWalletNetwork,
-  parseWalletConnectAccount,
-  pickPreferredWallet
-} from "../wallet/walletUtils";
+import { addressesMatch, formatWalletNetwork, pickPreferredWallet } from "../wallet/walletUtils";
 
 describe("walletUtils", () => {
   afterEach(() => {
@@ -37,20 +32,23 @@ describe("walletUtils", () => {
     expect(formatWalletNetwork(undefined)).toBe("Sin red");
   });
 
-  it("prefers Rabby, then MetaMask, then WalletConnect", () => {
+  it("prefers Rabby, then MetaMask, then generic injected wallets", () => {
     const options: WalletOption[] = [
-      { id: "walletconnect", name: "WalletConnect", source: "walletconnect", available: true, preferred: false },
       { id: "metamask", name: "MetaMask", source: "window.ethereum", available: true, preferred: false },
-      { id: "rabby", name: "Rabby", source: "eip6963", available: true, preferred: false }
+      { id: "rabby", name: "Rabby", source: "eip6963", available: true, preferred: false },
+      { id: "injected", name: "Injected", source: "window.ethereum", available: true, preferred: false }
     ];
 
     expect(pickPreferredWallet(options)?.id).toBe("rabby");
     expect(
       pickPreferredWallet(options.filter((option) => option.id !== "rabby"))?.id
     ).toBe("metamask");
+    expect(
+      pickPreferredWallet(options.filter((option) => option.id === "injected"))?.id
+    ).toBe("injected");
   });
 
-  it("prefers WalletConnect on iPhone Safari before injected wallets", () => {
+  it("keeps preferring Rabby on iPhone Safari when it is injected", () => {
     Object.defineProperty(window.navigator, "userAgent", {
       configurable: true,
       value: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
@@ -65,20 +63,10 @@ describe("walletUtils", () => {
     });
 
     const options: WalletOption[] = [
-      { id: "walletconnect", name: "WalletConnect", source: "walletconnect", available: true, preferred: false },
       { id: "metamask", name: "MetaMask", source: "window.ethereum", available: true, preferred: false },
       { id: "rabby", name: "Rabby", source: "eip6963", available: true, preferred: false }
     ];
 
-    expect(pickPreferredWallet(options)?.id).toBe("walletconnect");
-  });
-
-  it("parses WalletConnect accounts without transforming the address", () => {
-    expect(parseWalletConnectAccount("eip155:1:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toEqual({
-      chainId: "0x1",
-      address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    });
-    expect(parseWalletConnectAccount("solana:1:abc")).toBeUndefined();
-    expect(parseWalletConnectAccount("eip155:not-a-number:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBeUndefined();
+    expect(pickPreferredWallet(options)?.id).toBe("rabby");
   });
 });

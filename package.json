@@ -16,8 +16,6 @@
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",
-    "@reown/appkit-common": "1.8.23",
-    "@reown/appkit-universal-connector": "1.8.23",
     "decimal.js": "10.5.0",
     "events": "3.3.0",
     "react": "19.1.1",

@@ -5,26 +5,32 @@ import { useWalletConnection } from "../wallet/useWalletConnection";
 const walletMocks = vi.hoisted(() => ({
   connectMock: vi.fn(),
   disconnectMock: vi.fn(),
-  resetConnectorMock: vi.fn().mockResolvedValue(undefined),
-  resetStorageMock: vi.fn().mockResolvedValue(undefined)
+  resetStateMock: vi.fn().mockResolvedValue(undefined)
 }));
 
 vi.mock("../wallet/injectedWallets", () => ({
-  discoverInjectedWallets: vi.fn().mockResolvedValue([])
+  discoverInjectedWallets: vi.fn().mockResolvedValue([
+    {
+      id: "rabby",
+      name: "Rabby",
+      source: "eip6963",
+      available: true,
+      preferred: true,
+      provider: {}
+    }
+  ])
 }));
 
 vi.mock("../wallet/connectors", () => ({
   createConnector: vi.fn(() => ({
-    id: "walletconnect",
-    name: "WalletConnect",
-    source: "walletconnect",
+    id: "rabby",
+    name: "Rabby",
+    source: "eip6963",
     connect: walletMocks.connectMock,
     disconnect: walletMocks.disconnectMock
   })),
-  getWalletConnectDiagnosticsSnapshot: vi.fn(() => ({ ok: true })),
-  prepareWalletConnectConnector: vi.fn().mockResolvedValue({}),
-  resetWalletConnectConnector: walletMocks.resetConnectorMock,
-  resetWalletConnectStorageAndConnector: walletMocks.resetStorageMock
+  runLegacyWalletSchemaMigration: vi.fn(),
+  resetLegacyWalletState: walletMocks.resetStateMock
 }));
 
 function Harness({ auditAddress }: { auditAddress: string }) {
@@ -32,14 +38,15 @@ function Harness({ auditAddress }: { auditAddress: string }) {
 
   return (
     <div>
+      <div data-testid="wallet-count">{String(wallet.availableWallets.length)}</div>
       <div data-testid="status">{wallet.state.status}</div>
       <div data-testid="address">{wallet.state.address ?? ""}</div>
       <div data-testid="match">{String(wallet.auditAddressMatches)}</div>
       <div data-testid="warning">{wallet.mismatchWarning ?? ""}</div>
-      <button type="button" onClick={() => void wallet.connectWith("walletconnect")}>
+      <button type="button" onClick={() => void wallet.connectWith("rabby")}>
         conectar
       </button>
-      <button type="button" onClick={() => void wallet.resetWalletConnectState()}>
+      <button type="button" onClick={() => void wallet.resetWalletState()}>
         reset
       </button>
     </div>
@@ -54,15 +61,16 @@ describe("useWalletConnection", () => {
 
   it("compares the returned address with the audited address", async () => {
     walletMocks.connectMock.mockResolvedValue({
-      connectorId: "walletconnect",
-      connectorName: "WalletConnect",
-      source: "walletconnect",
+      connectorId: "rabby",
+      connectorName: "Rabby",
+      source: "eip6963",
       address: "0x3333333333333333333333333333333333333333",
       chainId: "0xa4b1",
       provider: {}
     });
 
     render(<Harness auditAddress="0x3333333333333333333333333333333333333333" />);
+    await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
     fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
@@ -72,15 +80,16 @@ describe("useWalletConnection", () => {
 
   it("shows a visible mismatch warning when wallet and audited address differ", async () => {
     walletMocks.connectMock.mockResolvedValue({
-      connectorId: "walletconnect",
-      connectorName: "WalletConnect",
-      source: "walletconnect",
+      connectorId: "rabby",
+      connectorName: "Rabby",
+      source: "eip6963",
       address: "0x4444444444444444444444444444444444444444",
       chainId: "0xa4b1",
       provider: {}
     });
 
     render(<Harness auditAddress="0x5555555555555555555555555555555555555555" />);
+    await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
     fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
@@ -92,31 +101,32 @@ describe("useWalletConnection", () => {
     walletMocks.connectMock
       .mockRejectedValueOnce(new Error("User rejected"))
       .mockResolvedValueOnce({
-        connectorId: "walletconnect",
-        connectorName: "WalletConnect",
-        source: "walletconnect",
+        connectorId: "rabby",
+        connectorName: "Rabby",
+        source: "eip6963",
         address: "0x6666666666666666666666666666666666666666",
         chainId: "0xa4b1",
         provider: {}
       });
 
     render(<Harness auditAddress="0x6666666666666666666666666666666666666666" />);
+    await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
 
     fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
-    expect(walletMocks.resetConnectorMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
     expect(screen.getByTestId("address").textContent).toBe("0x6666666666666666666666666666666666666666");
   });
 
-  it("resets local WalletConnect state without touching the rest of the app", async () => {
+  it("resets only the local legacy wallet state", async () => {
     render(<Harness auditAddress="0x7777777777777777777777777777777777777777" />);
+    await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
 
     fireEvent.click(screen.getByRole("button", { name: /reset/i }));
 
-    await waitFor(() => expect(walletMocks.resetStorageMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(walletMocks.resetStateMock).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("status").textContent).toBe("disconnected");
   });
 });

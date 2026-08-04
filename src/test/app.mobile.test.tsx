@@ -52,7 +52,7 @@ describe("mobile-first shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
 
     expect(screen.getByRole("button", { name: /Movimientos/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Wallet.*Conexion local para operativa manual futura\./i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Wallet.*Conexion local para operar en Testnet desde la wallet\./i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Debug/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Diagnostico API/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Ajustes/i })).toBeInTheDocument();
@@ -64,25 +64,24 @@ describe("mobile-first shell", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Wallet.*Conexion local para operativa manual futura\./i }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet.*Conexion local para operar en Testnet desde la wallet\./i }));
 
     expect(screen.getByRole("heading", { name: /^Wallet$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^Estado de conexion$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Conectar wallet$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Conectar WalletConnect/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Desconectar/i })).toBeInTheDocument();
     expect(screen.getByText(/Direccion auditada/i)).toBeInTheDocument();
   });
 
-  it("renders the WalletConnect debug screen from Mas", () => {
+  it("renders the wallet debug screen from Mas", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Debug.*Diagnostico completo de WalletConnect\./i }));
+    fireEvent.click(screen.getByRole("button", { name: /Debug.*Diagnostico local de la conexion de wallet\./i }));
 
-    expect(screen.getByRole("heading", { name: /Debug WalletConnect/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Debug wallet/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Copiar diagnostico/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Restablecer conexion WalletConnect/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Limpiar estado de conexion/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Informe JSON/i })).toBeInTheDocument();
   });
 

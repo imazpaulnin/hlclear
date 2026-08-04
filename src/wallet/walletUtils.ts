@@ -1,5 +1,4 @@
 import type { WalletConnectorId, WalletOption } from "./types";
-import { shouldPreferWalletConnect } from "./walletEnvironment";
 
 const KNOWN_NETWORKS: Record<string, string> = {
   "0x1": "Ethereum Mainnet",
@@ -35,9 +34,8 @@ export function formatWalletNetwork(chainId?: string): string {
 
 export function pickPreferredWallet(options: WalletOption[], targetWindow: Window = window): WalletOption | undefined {
   const available = options.filter((option) => option.available);
-  const byPriority: WalletConnectorId[] = shouldPreferWalletConnect(targetWindow)
-    ? ["walletconnect", "rabby", "metamask", "injected"]
-    : ["rabby", "metamask", "walletconnect", "injected"];
+  void targetWindow;
+  const byPriority: WalletConnectorId[] = ["rabby", "metamask", "injected"];
 
   return byPriority
     .map((id) => available.find((option) => option.id === id))
@@ -56,21 +54,4 @@ export function walletStatusLabel(status: "disconnected" | "connecting" | "conne
     default:
       return "Desconectado";
   }
-}
-
-export function parseWalletConnectAccount(account: string): { chainId: string; address: string } | undefined {
-  const [namespace, chainReference, address] = account.split(":");
-  if (namespace !== "eip155" || !chainReference || !address) {
-    return undefined;
-  }
-
-  const numericChainId = Number(chainReference);
-  if (!Number.isFinite(numericChainId)) {
-    return undefined;
-  }
-
-  return {
-    chainId: `0x${numericChainId.toString(16)}`,
-    address
-  };
 }

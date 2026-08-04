@@ -6,7 +6,3 @@ export function isIosSafari(targetWindow: Window = window): boolean {
 
   return isIosDevice && isWebKit && !excludedBrowsers;
 }
-
-export function shouldPreferWalletConnect(targetWindow: Window = window): boolean {
-  return isIosSafari(targetWindow);
-}

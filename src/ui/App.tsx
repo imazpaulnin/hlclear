@@ -654,8 +654,8 @@ function MoreTab({
   const sections = [
     { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
     { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
-    { key: "wallet" as const, label: "Wallet", description: "Conexion local para operativa manual futura." },
-    { key: "debug" as const, label: "Debug", description: "Diagnostico completo de WalletConnect." },
+    { key: "wallet" as const, label: "Wallet", description: "Conexion local para operar en Testnet desde la wallet." },
+    { key: "debug" as const, label: "Debug", description: "Diagnostico local de la conexion de wallet." },
     { key: "api" as const, label: "Diagnostico API", description: "Payload exacto y respuesta exacta de /info." },
     ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
     { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
@@ -849,8 +849,8 @@ function MoreTab({
 
       {panel === "debug" && (
         <>
-          <SubpageHeader title="Debug WalletConnect" onBack={() => onSelectPanel("menu")} />
-          <WalletConnectDebugPanel wallet={wallet} />
+          <SubpageHeader title="Debug wallet" onBack={() => onSelectPanel("menu")} />
+          <WalletDebugPanel wallet={wallet} />
         </>
       )}
 
@@ -948,7 +948,7 @@ function WalletPanel({
       <div className="card compact-card stack dense-stack">
         <h2>Wallets disponibles</h2>
         {availableWallets.length === 0 ? (
-          <div className="caption">No hay wallets expuestas por el navegador. Usa WalletConnect para abrir el selector oficial.</div>
+          <div className="caption">No hay wallets expuestas por este navegador. En iPhone abre HLClear dentro del navegador de Rabby o MetaMask.</div>
         ) : (
           availableWallets.map((option) => (
             <button
@@ -968,7 +968,7 @@ function WalletPanel({
       {import.meta.env.DEV && (
         <div className="card compact-card stack dense-stack">
           <h2>Logs de desarrollo</h2>
-          <Line label="Project ID cargado" value={availableWallets.some((option) => option.id === "walletconnect" && option.available) ? "Si" : "No"} />
+          <Line label="Wallets detectadas" value={availableWallets.length > 0 ? String(availableWallets.length) : "0"} />
           <textarea
             className="technical-block"
             readOnly
@@ -990,7 +990,7 @@ function WalletPanel({
   );
 }
 
-function WalletConnectDebugPanel({
+function WalletDebugPanel({
   wallet
 }: {
   wallet: ReturnType<typeof useWalletConnection>;
@@ -1002,12 +1002,12 @@ function WalletConnectDebugPanel({
     <div className="stack">
       <div className="card compact-card stack dense-stack">
         <h2>Diagnostico completo</h2>
-        <div className="caption">Se muestra el diagnostico completo sin resumir para revisar Project ID, origen, metadata, namespaces, eventos y errores.</div>
+        <div className="caption">Se muestra el diagnostico completo sin resumir para revisar el navegador, las wallets detectadas y el estado local de conexion.</div>
         <button className="button secondary full-width" type="button" onClick={() => void copyJson(report)}>
           Copiar diagnostico
         </button>
-        <button className="button secondary full-width" type="button" onClick={() => void wallet.resetWalletConnectState()}>
-          Restablecer conexion WalletConnect
+        <button className="button secondary full-width" type="button" onClick={() => void wallet.resetWalletState()}>
+          Limpiar estado de conexion
         </button>
       </div>
 

@@ -1,24 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  createConnector,
-  getWalletConnectDiagnosticsSnapshot,
-  prepareWalletConnectConnector,
-  resetWalletConnectConnector,
-  resetWalletConnectStorageAndConnector,
-  type WalletConnector
-} from "./connectors";
-import { shouldPreferWalletConnect } from "./walletEnvironment";
+import { createConnector, resetLegacyWalletState, runLegacyWalletSchemaMigration, type WalletConnector } from "./connectors";
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
-import {
-  REOWN_APPKIT_VERSION,
-  WALLETCONNECT_CORE_VERSION,
-  WALLETCONNECT_RELAY_URL,
-  WALLETCONNECT_SESSION_CAIP,
-  hasWalletConnectProjectId,
-  getWalletConnectProjectId,
-  maskWalletConnectProjectId
-} from "./walletConfig";
+import { isIosSafari } from "./walletEnvironment";
 import { addressesMatch, formatWalletNetwork, pickPreferredWallet } from "./walletUtils";
 
 type UseWalletConnectionResult = {
@@ -32,11 +16,11 @@ type UseWalletConnectionResult = {
   connect: () => Promise<void>;
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
   disconnect: () => Promise<void>;
-  resetWalletConnectState: () => Promise<void>;
+  resetWalletState: () => Promise<void>;
 };
 
 export function useWalletConnection(auditAddress: string): UseWalletConnectionResult {
-  const [availableWallets, setAvailableWallets] = useState<WalletOption[]>(() => [buildWalletConnectOption()]);
+  const [availableWallets, setAvailableWallets] = useState<WalletOption[]>([]);
   const [debugLogs, setDebugLogs] = useState<string[]>(() => buildInitialDebugLogs());
   const [state, setState] = useState<WalletControllerState>({
     status: "disconnected",
@@ -51,13 +35,17 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   }
 
   useEffect(() => {
+    runLegacyWalletSchemaMigration();
+    appendDebugLog("Migracion de almacenamiento legacy completada.");
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
 
     async function loadWallets() {
       const injectedWallets = await discoverInjectedWallets();
-      const wallets = mergeWalletOptions(injectedWallets);
-      const preferred = pickPreferredWallet(wallets);
-      const nextWallets = wallets.map((wallet) => ({
+      const preferred = pickPreferredWallet(injectedWallets);
+      const nextWallets = injectedWallets.map((wallet) => ({
         ...wallet,
         preferred: preferred?.id === wallet.id && preferred.source === wallet.source
       }));
@@ -75,23 +63,12 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     };
   }, []);
 
-  useEffect(() => {
-    if (!hasWalletConnectProjectId()) {
-      return;
-    }
-
-    appendDebugLog("Se prepara WalletConnect en segundo plano para iPhone Safari.");
-    void prepareWalletConnectConnector((message) => appendDebugLog(message)).catch((error) => {
-      appendDebugLog(`Error al preparar WalletConnect: ${formatErrorForDebug(error)}`);
-    });
-  }, []);
-
   useEffect(() => () => {
     detachListenersRef.current?.();
   }, []);
 
   async function connectWith(walletId: WalletOption["id"]) {
-    const wallet = mergeWalletOptions(availableWallets).find((option) => option.id === walletId && option.available);
+    const wallet = availableWallets.find((option) => option.id === walletId && option.available);
     if (!wallet) {
       setState((current) => ({
         ...current,
@@ -114,12 +91,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       connectorRef.current = connector;
       attachProviderListeners(session.provider, wallet, connector);
       applyConnectedSession(session);
-      appendDebugLog(`Conexion completada con ${wallet.name}.`);
     } catch (error) {
       appendDebugLog(`Fallo de conexion: ${formatErrorForDebug(error)}`);
-      if (wallet.id === "walletconnect") {
-        await resetWalletConnectConnector("fallo visible en pantalla");
-      }
       setState((current) => ({
         ...current,
         status: "error",
@@ -129,35 +102,22 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   }
 
   async function connect() {
-    const wallets = mergeWalletOptions(availableWallets);
-    const walletConnect = wallets.find((option) => option.id === "walletconnect" && option.available);
-
-    if (shouldPreferWalletConnect() && walletConnect) {
-      appendDebugLog("Safari iPhone detectado. Se prioriza WalletConnect.");
-      await connectWith("walletconnect");
-      return;
-    }
-
-    const preferred = pickPreferredWallet(wallets);
+    const preferred = pickPreferredWallet(availableWallets);
     if (preferred) {
       await connectWith(preferred.id);
       return;
     }
 
-    if (walletConnect) {
-      appendDebugLog("No hay wallet inyectada utilizable. Se abre WalletConnect igualmente.");
-      await connectWith("walletconnect");
-      return;
-    }
+    const browserHint = isIosSafari()
+      ? "En iPhone abre HLClear dentro del navegador de Rabby o MetaMask para que la wallet se inyecte."
+      : "Abre la app en un navegador donde Rabby o MetaMask esten instaladas y expuestas.";
 
+    appendDebugLog(`No se detecto ninguna wallet compatible. ${browserHint}`);
     setState((current) => ({
       ...current,
       status: "error",
-      error: hasWalletConnectProjectId()
-        ? "No se pudo abrir ninguna wallet. Prueba con WalletConnect desde este boton."
-        : "Falta configurar WalletConnect en produccion para poder abrir el selector oficial."
+      error: `No se detecto ninguna wallet compatible. ${browserHint}`
     }));
-    appendDebugLog("No hay ninguna ruta de conexion disponible.");
   }
 
   async function disconnect() {
@@ -170,24 +130,17 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       appendDebugLog("Wallet desconectada.");
     } finally {
       connectorRef.current = null;
-      setState((current) => ({
+      setState({
         status: "disconnected",
         networkLabel: "Sin red"
-      }));
+      });
     }
   }
 
-  async function resetWalletConnectState() {
-    appendDebugLog("Se restablece el estado local de WalletConnect.");
-    await resetWalletConnectStorageAndConnector();
-    connectorRef.current = null;
-    connectedProviderRef.current = null;
-    detachListenersRef.current?.();
-    detachListenersRef.current = null;
-    setState({
-      status: "disconnected",
-      networkLabel: "Sin red"
-    });
+  async function resetWalletState() {
+    appendDebugLog("Se limpian sesiones legacy de wallet.");
+    await resetLegacyWalletState();
+    await disconnect();
   }
 
   function attachProviderListeners(provider: Eip1193Provider, wallet: WalletOption, connector: WalletConnector) {
@@ -251,6 +204,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       chainId: session.chainId,
       networkLabel: formatWalletNetwork(session.chainId)
     });
+    appendDebugLog(`Conexion completada con ${session.connectorName}.`);
   }
 
   const auditAddressMatches = useMemo(() => {
@@ -262,11 +216,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   }, [auditAddress, state.address, state.status]);
 
   const mismatchWarning = useMemo(() => {
-    if (state.status !== "connected") {
-      return undefined;
-    }
-
-    if (!auditAddress) {
+    if (state.status !== "connected" || !auditAddress) {
       return undefined;
     }
 
@@ -283,37 +233,20 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     connectedProvider: connectedProviderRef.current,
     debugLogs,
     debugReport: {
-      ...getWalletConnectDiagnosticsSnapshot(),
+      environment: {
+        origin: window.location.origin,
+        href: window.location.href,
+        iosSafari: isIosSafari()
+      },
+      wallets: availableWallets,
+      state,
       logs: debugLogs
     },
     connect,
     connectWith,
     disconnect,
-    resetWalletConnectState
+    resetWalletState
   };
-}
-
-function buildWalletConnectOption(): WalletOption {
-  return {
-    id: "walletconnect",
-    name: "WalletConnect",
-    source: "walletconnect",
-    available: hasWalletConnectProjectId(),
-    preferred: false,
-    reasonUnavailable: hasWalletConnectProjectId()
-      ? undefined
-      : "Falta configurar VITE_WALLETCONNECT_PROJECT_ID en el entorno publicado de GitHub Pages."
-  };
-}
-
-function mergeWalletOptions(options: WalletOption[]): WalletOption[] {
-  const byKey = new Map<string, WalletOption>();
-
-  [...options, buildWalletConnectOption()].forEach((option) => {
-    byKey.set(`${option.id}:${option.source}:${option.rdns ?? option.name}`, option);
-  });
-
-  return [...byKey.values()];
 }
 
 function formatDebugTimestamp(): string {
@@ -321,15 +254,11 @@ function formatDebugTimestamp(): string {
 }
 
 function buildInitialDebugLogs(): string[] {
-  const projectId = getWalletConnectProjectId();
-
   return [
-    `${formatDebugTimestamp()} Version Reown AppKit: ${REOWN_APPKIT_VERSION}`,
-    `${formatDebugTimestamp()} Version WalletConnect: ${WALLETCONNECT_CORE_VERSION}`,
-    `${formatDebugTimestamp()} WalletConnect projectId: ${maskWalletConnectProjectId(projectId)}`,
-    `${formatDebugTimestamp()} Relay: ${WALLETCONNECT_RELAY_URL}`,
-    `${formatDebugTimestamp()} Chain solicitada: ${WALLETCONNECT_SESSION_CAIP}`,
-    `${formatDebugTimestamp()} Estado inicial: ${hasWalletConnectProjectId() ? "projectId disponible" : "projectId ausente"}`
+    `${formatDebugTimestamp()} Origen: ${window.location.origin}`,
+    `${formatDebugTimestamp()} URL: ${window.location.href}`,
+    `${formatDebugTimestamp()} iPhone Safari: ${isIosSafari() ? "si" : "no"}`,
+    `${formatDebugTimestamp()} Modo de conexion: wallet inyectada`
   ];
 }
 
