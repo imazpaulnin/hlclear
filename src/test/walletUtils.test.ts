@@ -32,10 +32,11 @@ describe("walletUtils", () => {
     expect(formatWalletNetwork(undefined)).toBe("Sin red");
   });
 
-  it("prefers Rabby, then MetaMask, then generic injected wallets", () => {
+  it("prefers Rabby, then MetaMask, then WalletConnect, then generic injected wallets", () => {
     const options: WalletOption[] = [
       { id: "metamask", name: "MetaMask", source: "window.ethereum", available: true, preferred: false },
       { id: "rabby", name: "Rabby", source: "eip6963", available: true, preferred: false },
+      { id: "walletconnect", name: "WalletConnect", source: "walletconnect", available: true, preferred: false },
       { id: "injected", name: "Injected", source: "window.ethereum", available: true, preferred: false }
     ];
 
@@ -43,6 +44,9 @@ describe("walletUtils", () => {
     expect(
       pickPreferredWallet(options.filter((option) => option.id !== "rabby"))?.id
     ).toBe("metamask");
+    expect(
+      pickPreferredWallet(options.filter((option) => option.id === "walletconnect" || option.id === "injected"))?.id
+    ).toBe("walletconnect");
     expect(
       pickPreferredWallet(options.filter((option) => option.id === "injected"))?.id
     ).toBe("injected");

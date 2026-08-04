@@ -654,8 +654,8 @@ function MoreTab({
   const sections = [
     { key: "movements" as const, label: "Movimientos", description: "Depositos, retiradas y ledger." },
     { key: "settings" as const, label: "Ajustes", description: "Direccion, entorno y sincronizacion." },
-    { key: "wallet" as const, label: "Wallet", description: "Conexion local para operar en Testnet desde la wallet." },
-    { key: "debug" as const, label: "Debug", description: "Diagnostico local de la conexion de wallet." },
+    { key: "wallet" as const, label: "Wallet", description: "Conexion por Rabby, MetaMask o WalletConnect." },
+    { key: "debug" as const, label: "Debug", description: "Diagnostico local de wallet y WalletConnect." },
     { key: "api" as const, label: "Diagnostico API", description: "Payload exacto y respuesta exacta de /info." },
     ...(auditMode ? [{ key: "audit" as const, label: "Auditoria", description: "JSON raw y formulas locales." }] : []),
     { key: "methodology" as const, label: "Metodologia", description: "Formulas y criterios de lectura." }
@@ -948,7 +948,7 @@ function WalletPanel({
       <div className="card compact-card stack dense-stack">
         <h2>Wallets disponibles</h2>
         {availableWallets.length === 0 ? (
-          <div className="caption">No hay wallets expuestas por este navegador. En iPhone abre HLClear dentro del navegador de Rabby o MetaMask.</div>
+          <div className="caption">No hay wallets expuestas por este navegador. Usa WalletConnect o abre HLClear dentro del navegador de Rabby o MetaMask.</div>
         ) : (
           availableWallets.map((option) => (
             <button
@@ -962,7 +962,7 @@ function WalletPanel({
             </button>
           ))
         )}
-        <div className="caption">La clave privada no sale del dispositivo. Esta fase solo prepara la conexion local.</div>
+        <div className="caption">La clave privada no sale del dispositivo. Puedes conectar por wallet inyectada o por WalletConnect segun el navegador.</div>
       </div>
 
       {import.meta.env.DEV && (
@@ -1002,7 +1002,7 @@ function WalletDebugPanel({
     <div className="stack">
       <div className="card compact-card stack dense-stack">
         <h2>Diagnostico completo</h2>
-        <div className="caption">Se muestra el diagnostico completo sin resumir para revisar el navegador, las wallets detectadas y el estado local de conexion.</div>
+        <div className="caption">Se muestra el diagnostico completo sin resumir para revisar el navegador, las wallets detectadas, WalletConnect y el estado local de conexion.</div>
         <button className="button secondary full-width" type="button" onClick={() => void copyJson(report)}>
           Copiar diagnostico
         </button>

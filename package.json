@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@nktkas/hyperliquid": "0.33.3",
+    "@walletconnect/ethereum-provider": "2.23.10",
     "decimal.js": "10.5.0",
     "events": "3.3.0",
     "react": "19.1.1",

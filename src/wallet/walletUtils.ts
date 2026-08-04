@@ -35,7 +35,7 @@ export function formatWalletNetwork(chainId?: string): string {
 export function pickPreferredWallet(options: WalletOption[], targetWindow: Window = window): WalletOption | undefined {
   const available = options.filter((option) => option.available);
   void targetWindow;
-  const byPriority: WalletConnectorId[] = ["rabby", "metamask", "injected"];
+  const byPriority: WalletConnectorId[] = ["rabby", "metamask", "walletconnect", "injected"];
 
   return byPriority
     .map((id) => available.find((option) => option.id === id))

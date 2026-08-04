@@ -22,6 +22,13 @@ vi.mock("../wallet/injectedWallets", () => ({
 }));
 
 vi.mock("../wallet/connectors", () => ({
+  buildWalletConnectOption: vi.fn(() => ({
+    id: "walletconnect",
+    name: "WalletConnect",
+    source: "walletconnect",
+    available: true,
+    preferred: false
+  })),
   createConnector: vi.fn(() => ({
     id: "rabby",
     name: "Rabby",
@@ -31,6 +38,11 @@ vi.mock("../wallet/connectors", () => ({
   })),
   runLegacyWalletSchemaMigration: vi.fn(),
   resetLegacyWalletState: walletMocks.resetStateMock
+}));
+
+vi.mock("../wallet/walletConfig", () => ({
+  getWalletConnectProjectId: vi.fn(() => "b56e18d47c72ab683b10814fe9495694"),
+  maskWalletConnectProjectId: vi.fn(() => "b56e18…5694")
 }));
 
 function Harness({ auditAddress }: { auditAddress: string }) {
