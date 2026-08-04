@@ -1,16 +1,44 @@
 # HLClear
 
-HLClear es una PWA instalable, mobile-first y de solo lectura para consultar y reconciliar de forma transparente una cuenta de Hyperliquid desde iPhone o navegador moderno, sin App Store, sin Apple Developer Program y sin backend propio.
+HLClear es una PWA instalable, mobile-first para iPhone y navegador moderno orientada a Hyperliquid.
 
-## Alcance de esta fase
+La Fase 1 de auditoria de solo lectura queda congelada y protegida.
 
-- Solo lectura.
-- Sin envio de ordenes.
-- Sin firma de wallet.
-- Sin almacenamiento de claves.
+La Fase 2 redefine el producto como:
+
+`Cliente movil de Hyperliquid con auditoria financiera completa y ejecucion manual de operaciones.`
+
+## Alcance actual
+
+### Fase 1 protegida
+
+- Auditoria financiera de solo lectura.
+- Reconciliacion transparente.
+- Diagnostico raw de API y metodologia.
+- Persistencia local de snapshots.
+
+### Fase 2 permitida en documentacion y arquitectura
+
+- Conexion de wallets compatibles con Hyperliquid.
+- Firma local de ordenes.
+- Envio de ordenes unicamente a Hyperliquid.
+- Apertura, modificacion y cierre de posiciones.
+- Cancelacion de ordenes.
+- Gestion manual de TP y SL.
+- Modo simulacion para probar interfaz sin enviar ordenes reales.
+
+## Restricciones obligatorias
+
+- Sin almacenamiento de claves privadas.
+- Sin envio de claves privadas al servidor.
+- Toda firma debe hacerse localmente.
+- Sin backend custodio.
 - Sin depositos ni retiradas.
-- Sin copy trading.
-- Sin automatizacion.
+- Sin automatizacion de trading.
+- Sin bots.
+- Sin copy trading automatico.
+- Sin ejecucion automatica de estrategias.
+- Sin ordenes sin confirmacion explicita del usuario.
 - Sin builder code.
 - Sin builder fee propio.
 - Sin telemetria.
@@ -36,6 +64,7 @@ HLClear es una PWA instalable, mobile-first y de solo lectura para consultar y r
 - [src/data/hyperliquidApi.ts](/C:/Users/imazp/Desktop/hyperliquid/src/data/hyperliquidApi.ts): acceso directo a la API oficial.
 - [src/domain/dashboard.ts](/C:/Users/imazp/Desktop/hyperliquid/src/domain/dashboard.ts): reconciliacion, resumen y semaforo de rentabilidad.
 - [src/domain/cycles.ts](/C:/Users/imazp/Desktop/hyperliquid/src/domain/cycles.ts): ciclos de posicion, ampliaciones y cierres parciales.
+- [docs/architecture.md](/C:/Users/imazp/Desktop/hyperliquid/docs/architecture.md): alcance y fronteras entre auditoria y ejecucion manual.
 - [public/manifest.webmanifest](/C:/Users/imazp/Desktop/hyperliquid/public/manifest.webmanifest): manifest PWA.
 - [public/sw.js](/C:/Users/imazp/Desktop/hyperliquid/public/sw.js): service worker.
 - [.github/workflows/deploy-pages.yml](/C:/Users/imazp/Desktop/hyperliquid/.github/workflows/deploy-pages.yml): despliegue automatico a GitHub Pages.
@@ -122,6 +151,8 @@ No hace falta dominio personalizado, Apple Developer Program, TestFlight ni ning
 ## Seguridad
 
 - La direccion publica se introduce desde la interfaz y se guarda solo en el dispositivo.
+- Cualquier futura firma de ordenes debe ocurrir localmente en la wallet del usuario.
+- Nunca se deben custodiar claves privadas.
 - No hay backend propio.
 - No hay secretos en el repositorio.
 - No hay builder codes.
@@ -132,6 +163,7 @@ No hace falta dominio personalizado, Apple Developer Program, TestFlight ni ning
 
 Detalles:
 
+- [Arquitectura](/C:/Users/imazp/Desktop/hyperliquid/docs/architecture.md)
 - [Informe de seguridad](/C:/Users/imazp/Desktop/hyperliquid/docs/reports/security.md)
 - [Informe de metodologia financiera](/C:/Users/imazp/Desktop/hyperliquid/docs/reports/financial-methodology.md)
 - [Informe de endpoints](/C:/Users/imazp/Desktop/hyperliquid/docs/reports/endpoints.md)

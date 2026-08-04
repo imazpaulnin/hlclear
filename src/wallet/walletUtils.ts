@@ -1,4 +1,5 @@
 import type { WalletConnectorId, WalletOption } from "./types";
+import { shouldPreferWalletConnect } from "./walletEnvironment";
 
 const KNOWN_NETWORKS: Record<string, string> = {
   "0x1": "Ethereum Mainnet",
@@ -30,9 +31,11 @@ export function formatWalletNetwork(chainId?: string): string {
   return KNOWN_NETWORKS[chainId] ? `${KNOWN_NETWORKS[chainId]} (${chainId})` : chainId;
 }
 
-export function pickPreferredWallet(options: WalletOption[]): WalletOption | undefined {
+export function pickPreferredWallet(options: WalletOption[], targetWindow: Window = window): WalletOption | undefined {
   const available = options.filter((option) => option.available);
-  const byPriority: WalletConnectorId[] = ["rabby", "metamask", "walletconnect", "injected"];
+  const byPriority: WalletConnectorId[] = shouldPreferWalletConnect(targetWindow)
+    ? ["walletconnect", "rabby", "metamask", "injected"]
+    : ["rabby", "metamask", "walletconnect", "injected"];
 
   return byPriority
     .map((id) => available.find((option) => option.id === id))

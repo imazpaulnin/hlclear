@@ -67,7 +67,8 @@ describe("mobile-first shell", () => {
 
     expect(screen.getByRole("heading", { name: /^Wallet$/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^Estado de conexion$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Conectar wallet/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Conectar wallet$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Conectar WalletConnect/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Desconectar/i })).toBeInTheDocument();
     expect(screen.getByText(/Direccion auditada/i)).toBeInTheDocument();
   });

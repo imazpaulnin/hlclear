@@ -24,13 +24,21 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Validate WalletConnect Project ID
+        run: |
+          if [ -z "$VITE_WALLETCONNECT_PROJECT_ID" ]; then
+            echo "Missing VITE_WALLETCONNECT_PROJECT_ID GitHub secret for production WalletConnect."
+            exit 1
+          fi
+        env:
+          VITE_WALLETCONNECT_PROJECT_ID: ${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.VITE_WALLETCONNECT_PROJECT_ID }}
+          VITE_WALLETCONNECT_PROJECT_ID: ${{ secrets.VITE_WALLETCONNECT_PROJECT_ID }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

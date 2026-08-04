@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@nktkas/hyperliquid": "^0.33.3",
+    "@reown/appkit-common": "^1.8.23",
+    "@reown/appkit-universal-connector": "^1.8.23",
     "@walletconnect/jsonrpc-utils": "^1.0.8",
     "@walletconnect/universal-provider": "^2.23.10",
     "decimal.js": "^10.5.0",

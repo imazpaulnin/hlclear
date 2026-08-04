@@ -22,12 +22,14 @@ export function hasWalletConnectProjectId(): boolean {
 
 export function getWalletMetadata() {
   const origin = typeof window !== "undefined" ? window.location.origin : "app://hlclear";
-  const iconPath = typeof window !== "undefined" ? `${origin}${import.meta.env.BASE_URL}icons/icon-192.png` : `${origin}/icons/icon-192.png`;
+  const basePath = import.meta.env.BASE_URL || "/";
+  const appUrl = typeof window !== "undefined" ? new URL(basePath, origin).toString() : `${origin}/`;
+  const iconPath = typeof window !== "undefined" ? new URL(`icons/icon-192.png`, appUrl).toString() : `${origin}/icons/icon-192.png`;
 
   return {
     name: "HLClear",
     description: "Cliente movil de Hyperliquid con auditoria financiera completa y ejecucion manual.",
-    url: origin,
+    url: appUrl,
     icons: [iconPath]
   };
 }

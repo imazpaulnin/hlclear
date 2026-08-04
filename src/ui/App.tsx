@@ -937,7 +937,7 @@ function WalletPanel({
       <div className="card compact-card stack dense-stack">
         <h2>Wallets disponibles</h2>
         {availableWallets.length === 0 ? (
-          <div className="caption">No se detecto ninguna wallet compatible en este navegador.</div>
+          <div className="caption">No hay wallets expuestas por el navegador. Usa WalletConnect para abrir el selector oficial.</div>
         ) : (
           availableWallets.map((option) => (
             <button
@@ -953,6 +953,19 @@ function WalletPanel({
         )}
         <div className="caption">La clave privada no sale del dispositivo. Esta fase solo prepara la conexion local.</div>
       </div>
+
+      {import.meta.env.DEV && (
+        <div className="card compact-card stack dense-stack">
+          <h2>Logs de desarrollo</h2>
+          <Line label="Project ID cargado" value={availableWallets.some((option) => option.id === "walletconnect" && option.available) ? "Si" : "No"} />
+          <textarea
+            className="technical-block"
+            readOnly
+            value={wallet.debugLogs.join("\n")}
+            rows={Math.min(18, Math.max(6, wallet.debugLogs.length + 1))}
+          />
+        </div>
+      )}
 
       {unavailableWallets.length > 0 && (
         <div className="card compact-card stack dense-stack">
