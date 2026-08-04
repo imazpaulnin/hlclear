@@ -3,12 +3,11 @@ const LOCALHOST_WALLETCONNECT_PROJECT_ID = "b56e18d47c72ab683b10814fe9495694";
 export const REOWN_APPKIT_VERSION = "1.8.23";
 export const WALLETCONNECT_CORE_VERSION = "2.23.10";
 export const WALLETCONNECT_RELAY_URL = "wss://relay.walletconnect.org";
-export const HYPERLIQUID_TESTNET_CHAIN_ID = 998;
-export const HYPERLIQUID_MAINNET_CHAIN_ID = 999;
-export const HYPERLIQUID_TESTNET_CHAIN_HEX = "0x3e6";
-export const HYPERLIQUID_MAINNET_CHAIN_HEX = "0x3e7";
-export const HYPERLIQUID_TESTNET_CAIP = "eip155:998";
-export const HYPERLIQUID_MAINNET_CAIP = "eip155:999";
+export const WALLETCONNECT_SESSION_CHAIN_ID = 42161;
+export const WALLETCONNECT_SESSION_CHAIN_HEX = "0xa4b1";
+export const WALLETCONNECT_SESSION_CAIP = "eip155:42161";
+export const WALLETCONNECT_SESSION_RPC_URL = "https://arb1.arbitrum.io/rpc";
+export const WALLETCONNECT_SCHEMA_VERSION = 2;
 
 export type WalletConnectProjectIdValidation = {
   exists: boolean;

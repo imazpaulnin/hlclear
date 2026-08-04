@@ -2,15 +2,17 @@ import type { ConnectedWalletSession, Eip1193Provider, WalletConnectorId, Wallet
 import { UniversalConnector, type UniversalConnectorConfig } from "@reown/appkit-universal-connector";
 import type { CustomCaipNetwork } from "@reown/appkit-common";
 import {
-  HYPERLIQUID_TESTNET_CAIP,
-  HYPERLIQUID_TESTNET_CHAIN_HEX,
-  HYPERLIQUID_TESTNET_CHAIN_ID,
   REOWN_APPKIT_VERSION,
   WALLETCONNECT_CORE_VERSION,
   WALLETCONNECT_RELAY_URL,
+  WALLETCONNECT_SCHEMA_VERSION,
+  WALLETCONNECT_SESSION_CAIP,
+  WALLETCONNECT_SESSION_CHAIN_HEX,
+  WALLETCONNECT_SESSION_CHAIN_ID,
+  WALLETCONNECT_SESSION_RPC_URL,
+  getWalletConnectLocation,
   getWalletConnectProjectId,
   getWalletConnectRedirectConfig,
-  getWalletConnectLocation,
   getWalletMetadata,
   maskWalletConnectProjectId,
   validateWalletConnectProjectId
@@ -20,7 +22,7 @@ import { parseWalletConnectAccount } from "./walletUtils";
 type WalletDebugLogger = (message: string) => void;
 
 type WalletConnectSessionEnvelope = Awaited<ReturnType<UniversalConnector["connect"]>>;
-type WalletConnectSession = WalletConnectSessionEnvelope["session"];
+type WalletConnectSession = NonNullable<WalletConnectSessionEnvelope["session"]>;
 type WalletConnectEventEntry = {
   at: string;
   event: string;
@@ -48,11 +50,11 @@ type WalletConnectDiagnosticsSnapshot = {
   requiredNamespaces: ReturnType<typeof buildWalletConnectNamespaces>;
   optionalNamespaces: Record<string, unknown> | null;
   connectPayload: {
-    requiredNamespaces: ReturnType<typeof buildWalletConnectNamespaces>;
-    optionalNamespaces: Record<string, unknown> | null;
+    namespaces: ReturnType<typeof buildWalletConnectNamespaces>;
   };
   initializationState: {
     initialized: boolean;
+    migrationVersion: number;
     lastKnownProviderState: unknown;
   };
   lastResponse: unknown;
@@ -61,6 +63,16 @@ type WalletConnectDiagnosticsSnapshot = {
   lastRelayJson: unknown;
   events: WalletConnectEventEntry[];
 };
+
+type WalletConnectProviderLike = {
+  session?: WalletConnectSession;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+};
+
+const WALLETCONNECT_SCHEMA_KEY = "hlclear.walletConnectionSchemaVersion";
+const WALLETCONNECT_STORAGE_PATTERNS = [/walletconnect/i, /\bwc@2/i, /reown/i, /appkit/i];
+const WALLETCONNECT_EVENT_NAMES = ["display_uri", "session_proposal", "session_request", "session_update", "session_delete", "session_expire"] as const;
 
 export interface WalletConnector {
   readonly id: WalletConnectorId;
@@ -133,7 +145,7 @@ class WalletConnectConnector implements WalletConnector {
     try {
       const connector = await prepareWalletConnectConnector(this.debug);
       this.connector = connector;
-      this.debug?.("WalletConnect inicializado. Se intentara abrir el modal oficial.");
+      this.debug?.("WalletConnect inicializado. UniversalConnector gestionara la negociacion oficial.");
 
       const existingSession = getExistingWalletConnectSession(connector);
       this.debug?.(`Estado antes de connect(): ${describeWalletConnectState(connector)}`);
@@ -155,10 +167,7 @@ class WalletConnectConnector implements WalletConnector {
   }
 
   async disconnect(): Promise<void> {
-    if (this.connector) {
-      await this.connector.disconnect();
-    }
-    await resetWalletConnectConnector("disconnect()");
+    await resetWalletConnectConnector("disconnect()", { clearStorage: true });
   }
 }
 
@@ -174,6 +183,7 @@ let walletConnectConnectorPromise: Promise<UniversalConnector> | undefined;
 let walletConnectConnectorInstance: UniversalConnector | undefined;
 const walletConnectDebugLoggers = new Set<WalletDebugLogger>();
 const walletConnectDiagnosticsState: {
+  migrationVersion: number;
   lastResponse: unknown;
   lastError: unknown;
   lastHttpResponse: unknown;
@@ -182,6 +192,7 @@ const walletConnectDiagnosticsState: {
   initialized: boolean;
   lastKnownProviderState: unknown;
 } = {
+  migrationVersion: 0,
   lastResponse: null,
   lastError: null,
   lastHttpResponse: null,
@@ -203,26 +214,40 @@ export function prepareWalletConnectConnector(debug?: WalletDebugLogger): Promis
   return walletConnectConnectorPromise;
 }
 
-export async function resetWalletConnectConnector(reason: string): Promise<void> {
+export async function resetWalletConnectConnector(
+  reason: string,
+  options: { clearStorage?: boolean } = {}
+): Promise<void> {
   emitWalletConnectDebug(`Se reinicia la instancia WalletConnect: ${reason}.`);
 
   const connector = walletConnectConnectorInstance;
   walletConnectConnectorPromise = undefined;
   walletConnectConnectorInstance = undefined;
+  walletConnectDiagnosticsState.initialized = false;
+  walletConnectDiagnosticsState.lastKnownProviderState = null;
 
-  if (!connector) {
-    return;
+  if (connector) {
+    try {
+      await connector.disconnect();
+    } catch (error) {
+      emitWalletConnectDebug(`Error al limpiar la sesion WalletConnect: ${formatWalletConnectError(error)}`);
+    }
   }
 
-  try {
-    await connector.disconnect();
-  } catch (error) {
-    emitWalletConnectDebug(`Error al limpiar la sesion WalletConnect: ${formatWalletConnectError(error)}`);
+  if (options.clearStorage) {
+    clearWalletConnectStorage();
+    writeWalletConnectSchemaVersion(WALLETCONNECT_SCHEMA_VERSION);
   }
+}
+
+export async function resetWalletConnectStorageAndConnector(): Promise<void> {
+  await resetWalletConnectConnector("restablecimiento manual", { clearStorage: true });
 }
 
 async function initializeWalletConnectConnector(debug?: WalletDebugLogger): Promise<UniversalConnector> {
   registerWalletConnectDebugLogger(debug);
+  runWalletConnectSchemaMigration();
+
   const projectId = getWalletConnectProjectId();
   const metadata = getWalletMetadata();
   const redirect = getWalletConnectRedirectConfig();
@@ -247,10 +272,10 @@ async function initializeWalletConnectConnector(debug?: WalletDebugLogger): Prom
   emitWalletConnectDebug(`Metadata completa: ${safeJsonStringify(metadata)}`);
   emitWalletConnectDebug(`Redirect configurado: ${safeJsonStringify(redirect)}`);
   emitWalletConnectDebug(`window.location: ${safeJsonStringify(location)}`);
-  emitWalletConnectDebug(`Chain solicitada: ${HYPERLIQUID_TESTNET_CAIP} (${HYPERLIQUID_TESTNET_CHAIN_HEX})`);
+  emitWalletConnectDebug(`Chain solicitada: ${WALLETCONNECT_SESSION_CAIP} (${WALLETCONNECT_SESSION_CHAIN_HEX})`);
   emitWalletConnectDebug(`requiredNamespaces: ${safeJsonStringify(requiredNamespaces)}`);
   emitWalletConnectDebug(`optionalNamespaces: ${safeJsonStringify(null)}`);
-  emitWalletConnectDebug(`Payload exacto de connect(): ${safeJsonStringify({ requiredNamespaces, optionalNamespaces: null })}`);
+  emitWalletConnectDebug(`Payload exacto de connect(): ${safeJsonStringify({ namespaces: requiredNamespaces })}`);
   emitWalletConnectDebug("Inicializando WalletConnect...");
 
   const connector = await UniversalConnector.init({
@@ -277,9 +302,9 @@ async function initializeWalletConnectConnector(debug?: WalletDebugLogger): Prom
   return connector;
 }
 
-const hyperliquidTestnetNetwork: CustomCaipNetwork<"eip155"> = {
-  id: HYPERLIQUID_TESTNET_CHAIN_ID,
-  name: "Hyperliquid Testnet",
+const walletConnectSessionNetwork: CustomCaipNetwork<"eip155"> = {
+  id: WALLETCONNECT_SESSION_CHAIN_ID,
+  name: "Arbitrum One",
   nativeCurrency: {
     decimals: 18,
     name: "Ether",
@@ -287,24 +312,24 @@ const hyperliquidTestnetNetwork: CustomCaipNetwork<"eip155"> = {
   },
   rpcUrls: {
     default: {
-      http: ["https://rpc.hyperliquid-testnet.xyz/evm"]
+      http: [WALLETCONNECT_SESSION_RPC_URL]
     }
   },
   blockExplorers: {
     default: {
-      name: "HyperEVM Testnet Explorer",
-      url: "https://app.hyperliquid-testnet.xyz/explorer"
+      name: "Arbiscan",
+      url: "https://arbiscan.io"
     }
   },
   chainNamespace: "eip155",
-  caipNetworkId: HYPERLIQUID_TESTNET_CAIP
+  caipNetworkId: WALLETCONNECT_SESSION_CAIP
 };
 
 const evmWalletConnectNamespace: UniversalConnectorConfig["networks"][number] = {
   namespace: "eip155",
   methods: ["eth_sendTransaction", "eth_signTransaction", "eth_sign", "personal_sign", "eth_signTypedData", "eth_signTypedData_v4"],
   events: ["accountsChanged", "chainChanged", "disconnect"],
-  chains: [hyperliquidTestnetNetwork]
+  chains: [walletConnectSessionNetwork]
 };
 
 function registerWalletConnectDebugLogger(debug?: WalletDebugLogger) {
@@ -317,7 +342,7 @@ function emitWalletConnectDebug(message: string) {
   walletConnectDebugLoggers.forEach((logger) => logger(message));
 }
 
-function buildWalletConnectNamespaces() {
+export function buildWalletConnectNamespaces() {
   return {
     eip155: {
       methods: [...evmWalletConnectNamespace.methods],
@@ -328,48 +353,15 @@ function buildWalletConnectNamespaces() {
 }
 
 async function connectWalletConnectSession(connector: UniversalConnector): Promise<WalletConnectSessionEnvelope> {
-  const requiredNamespaces = buildWalletConnectNamespaces();
-  const appKit = getWalletConnectAppKit(connector);
-  const provider = connector.provider as WalletConnectProviderInternals;
-  const signClient = provider.client;
-
-  if (!signClient) {
-    throw new Error("WalletConnect SignClient no esta disponible.");
-  }
-
-  emitWalletConnectDebug("Se intenta abrir el modal oficial de WalletConnect.");
-  await appKit?.open();
-
-  try {
-    const pendingConnection = await signClient.connect({
-      requiredNamespaces
-    });
-
-    walletConnectDiagnosticsState.lastResponse = serializeUnknownError({
-      uri: pendingConnection.uri,
-      approval: pendingConnection.approval
-    });
-
-    emitWalletConnectDebug(`connect() devolvio uri: ${pendingConnection.uri ?? "sin uri"}`);
-    emitWalletConnectDebug(`connect() devolvio approval(): ${safeJsonStringify({ available: typeof pendingConnection.approval === "function" })}`);
-
-    if (pendingConnection.uri) {
-      await appKit?.open({
-        uri: pendingConnection.uri
-      });
-    }
-
-    const session = await pendingConnection.approval();
-    const response = { session };
-    emitWalletConnectDebug(`Estado despues de connect(): ${describeWalletConnectState(connector)}`);
-    emitWalletConnectDebug(`Respuesta completa de WalletConnect: ${safeJsonStringify(response)}`);
-    await appKit?.close();
-
-    return response;
-  } catch (error) {
-    await appKit?.close();
-    throw error;
-  }
+  emitWalletConnectDebug("Se llama a UniversalConnector.connect() una sola vez.");
+  const response = await connector.connect({
+    namespaces: buildWalletConnectNamespaces()
+  });
+  walletConnectDiagnosticsState.lastResponse = serializeUnknownError(response);
+  walletConnectDiagnosticsState.lastKnownProviderState = describeWalletConnectState(connector);
+  emitWalletConnectDebug(`Estado despues de connect(): ${walletConnectDiagnosticsState.lastKnownProviderState}`);
+  emitWalletConnectDebug(`Respuesta completa de WalletConnect: ${safeJsonStringify(response)}`);
+  return response;
 }
 
 async function buildWalletConnectSession(
@@ -386,8 +378,8 @@ async function buildWalletConnectSession(
   const currentCaipChain = `eip155:${Number.parseInt(parsed.chainId, 16)}`;
   const bridgeProvider: Eip1193Provider = {
     request: (args) => connector.request(args, currentCaipChain),
-    on: (event, listener) => connector.provider.on?.(event, listener),
-    removeListener: (event, listener) => connector.provider.removeListener?.(event, listener)
+    on: (event, listener) => getWalletConnectProvider(connector).on?.(event, listener),
+    removeListener: (event, listener) => getWalletConnectProvider(connector).removeListener?.(event, listener)
   };
 
   const chainId = (await bridgeProvider.request({ method: "eth_chainId" })) as string;
@@ -404,9 +396,7 @@ async function buildWalletConnectSession(
 }
 
 function getExistingWalletConnectSession(connector: UniversalConnector): WalletConnectSession | undefined {
-  const provider = connector.provider as WalletConnectProviderInternals;
-
-  return provider.session ?? provider.client?.session?.getAll?.()[0];
+  return getWalletConnectProvider(connector).session;
 }
 
 function getPrimaryWalletConnectAccount(session?: WalletConnectSession): string | undefined {
@@ -414,15 +404,13 @@ function getPrimaryWalletConnectAccount(session?: WalletConnectSession): string 
 }
 
 function attachWalletConnectDebugEvents(connector: UniversalConnector) {
-  const provider = connector.provider as {
-    on?: (event: string, listener: (...args: unknown[]) => void) => void;
-  };
+  const provider = getWalletConnectProvider(connector);
 
   if (!provider.on) {
     return;
   }
 
-  (["display_uri", "session_proposal", "session_request", "session_delete", "session_update", "session_expire"] as const).forEach((eventName) => {
+  WALLETCONNECT_EVENT_NAMES.forEach((eventName) => {
     provider.on?.(eventName, (...args: unknown[]) => {
       const payload = args.length <= 1 ? args[0] : args;
       walletConnectDiagnosticsState.events = [
@@ -439,26 +427,23 @@ function attachWalletConnectDebugEvents(connector: UniversalConnector) {
 }
 
 function describeWalletConnectState(connector: UniversalConnector): string {
-  const provider = connector.provider as WalletConnectProviderInternals;
-  const pairing = provider.client?.pairing?.getPairings?.()?.[0];
+  const session = getExistingWalletConnectSession(connector);
 
   return safeJsonStringify({
     initialized: true,
-    relayUrl: provider.client?.core?.relayUrl ?? WALLETCONNECT_RELAY_URL,
-    relayProtocol: provider.client?.core?.relayer?.protocol ?? pairing?.relay?.protocol ?? null,
-    pairingTopic: pairing?.topic ?? null,
-    pairingRelay: pairing?.relay ?? null,
-    transportType: extractTransportType(walletConnectDiagnosticsState.events),
-    hasSession: Boolean(provider.session),
-    sessionCount: provider.client?.session?.getAll?.().length ?? 0,
-    requestedChain: HYPERLIQUID_TESTNET_CAIP
+    hasSession: Boolean(session),
+    requestedChain: WALLETCONNECT_SESSION_CAIP,
+    accounts: session?.namespaces?.eip155?.accounts ?? []
   });
 }
 
 function formatWalletConnectError(error: unknown): string {
   const serialized = {
     error: serializeUnknownError(error),
-    walletConnectContext: collectWalletConnectFailureContext()
+    walletConnectContext: {
+      lastKnownProviderState: walletConnectDiagnosticsState.lastKnownProviderState,
+      requestedChain: WALLETCONNECT_SESSION_CAIP
+    }
   };
   walletConnectDiagnosticsState.lastError = serialized;
   walletConnectDiagnosticsState.lastHttpResponse = extractCandidateField(serialized, ["response", "httpResponse"]);
@@ -580,18 +565,18 @@ export function getWalletConnectDiagnosticsSnapshot(): WalletConnectDiagnosticsS
     redirect: getWalletConnectRedirectConfig(),
     location: getWalletConnectLocation(),
     chainId: {
-      caip: HYPERLIQUID_TESTNET_CAIP,
-      hex: HYPERLIQUID_TESTNET_CHAIN_HEX,
-      numeric: HYPERLIQUID_TESTNET_CHAIN_ID
+      caip: WALLETCONNECT_SESSION_CAIP,
+      hex: WALLETCONNECT_SESSION_CHAIN_HEX,
+      numeric: WALLETCONNECT_SESSION_CHAIN_ID
     },
     requiredNamespaces: buildWalletConnectNamespaces(),
     optionalNamespaces: null,
     connectPayload: {
-      requiredNamespaces: buildWalletConnectNamespaces(),
-      optionalNamespaces: null
+      namespaces: buildWalletConnectNamespaces()
     },
     initializationState: {
       initialized: walletConnectDiagnosticsState.initialized,
+      migrationVersion: walletConnectDiagnosticsState.migrationVersion,
       lastKnownProviderState: walletConnectDiagnosticsState.lastKnownProviderState
     },
     lastResponse: walletConnectDiagnosticsState.lastResponse,
@@ -602,78 +587,54 @@ export function getWalletConnectDiagnosticsSnapshot(): WalletConnectDiagnosticsS
   };
 }
 
-type WalletConnectProviderInternals = {
-  session?: WalletConnectSession;
-  client?: {
-    connect: (params: {
-      requiredNamespaces: ReturnType<typeof buildWalletConnectNamespaces>;
-    }) => Promise<{
-      uri?: string;
-      approval: () => Promise<WalletConnectSession>;
-    }>;
-    session?: {
-      getAll?: () => WalletConnectSession[];
-    };
-    pairing?: {
-      getPairings?: () => Array<{
-        topic: string;
-        relay?: {
-          protocol?: string;
-          data?: string;
-        };
-      }>;
-    };
-    core?: {
-      relayUrl?: string;
-      relayer?: {
-        protocol?: string;
-      };
-    };
-  };
-};
-
-function getWalletConnectAppKit(connector: UniversalConnector): {
-  open: (options?: { uri?: string }) => Promise<void>;
-  close: () => Promise<void>;
-} | undefined {
-  const internal = connector as unknown as {
-    appKit?: {
-      open: (options?: { uri?: string }) => Promise<void>;
-      close: () => Promise<void>;
-    };
-  };
-
-  return internal.appKit;
-}
-
-function collectWalletConnectFailureContext() {
-  const connector = walletConnectConnectorInstance;
-  const provider = connector?.provider as WalletConnectProviderInternals | undefined;
-  const pairing = provider?.client?.pairing?.getPairings?.()?.[0];
-
-  return {
-    topic: pairing?.topic ?? null,
-    pairingTopic: pairing?.topic ?? null,
-    relayProtocol: provider?.client?.core?.relayer?.protocol ?? pairing?.relay?.protocol ?? null,
-    relayUrl: provider?.client?.core?.relayUrl ?? WALLETCONNECT_RELAY_URL,
-    pairingRelay: pairing?.relay ?? null,
-    transport: extractTransportType(walletConnectDiagnosticsState.events)
-  };
-}
-
-function extractTransportType(events: WalletConnectEventEntry[]): unknown {
-  const lastEventWithTransport = [...events].reverse().find((entry) => {
-    if (!entry.payload || typeof entry.payload !== "object") {
-      return false;
-    }
-
-    const payload = entry.payload as Record<string, unknown>;
-    return "transportType" in payload;
-  });
-
-  if (!lastEventWithTransport || !lastEventWithTransport.payload || typeof lastEventWithTransport.payload !== "object") {
-    return null;
+export function runWalletConnectSchemaMigration() {
+  const currentVersion = readWalletConnectSchemaVersion();
+  if (currentVersion >= WALLETCONNECT_SCHEMA_VERSION) {
+    walletConnectDiagnosticsState.migrationVersion = currentVersion;
+    return;
   }
 
-  return (lastEventWithTransport.payload as Record<string, unknown>).transportType ?? null;
+  emitWalletConnectDebug(`Migracion WalletConnect: ${currentVersion} -> ${WALLETCONNECT_SCHEMA_VERSION}.`);
+  clearWalletConnectStorage();
+  writeWalletConnectSchemaVersion(WALLETCONNECT_SCHEMA_VERSION);
+  walletConnectDiagnosticsState.migrationVersion = WALLETCONNECT_SCHEMA_VERSION;
+}
+
+export function clearWalletConnectStorage() {
+  clearMatchingStorage(window.localStorage);
+  clearMatchingStorage(window.sessionStorage);
+}
+
+function clearMatchingStorage(storage: Storage) {
+  const keysToDelete: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (!key) {
+      continue;
+    }
+
+    if (key === WALLETCONNECT_SCHEMA_KEY) {
+      continue;
+    }
+
+    if (WALLETCONNECT_STORAGE_PATTERNS.some((pattern) => pattern.test(key))) {
+      keysToDelete.push(key);
+    }
+  }
+
+  keysToDelete.forEach((key) => storage.removeItem(key));
+}
+
+function readWalletConnectSchemaVersion(): number {
+  const raw = window.localStorage.getItem(WALLETCONNECT_SCHEMA_KEY);
+  const parsed = raw ? Number.parseInt(raw, 10) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function writeWalletConnectSchemaVersion(version: number) {
+  window.localStorage.setItem(WALLETCONNECT_SCHEMA_KEY, String(version));
+}
+
+function getWalletConnectProvider(connector: UniversalConnector): WalletConnectProviderLike {
+  return connector.provider as WalletConnectProviderLike;
 }

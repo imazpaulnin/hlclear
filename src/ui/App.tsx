@@ -1006,6 +1006,9 @@ function WalletConnectDebugPanel({
         <button className="button secondary full-width" type="button" onClick={() => void copyJson(report)}>
           Copiar diagnostico
         </button>
+        <button className="button secondary full-width" type="button" onClick={() => void wallet.resetWalletConnectState()}>
+          Restablecer conexion WalletConnect
+        </button>
       </div>
 
       <div className="card compact-card stack dense-stack">

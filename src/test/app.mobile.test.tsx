@@ -82,6 +82,7 @@ describe("mobile-first shell", () => {
 
     expect(screen.getByRole("heading", { name: /Debug WalletConnect/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Copiar diagnostico/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Restablecer conexion WalletConnect/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Informe JSON/i })).toBeInTheDocument();
   });
 

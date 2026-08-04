@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createConnector, getWalletConnectDiagnosticsSnapshot, prepareWalletConnectConnector, resetWalletConnectConnector, type WalletConnector } from "./connectors";
+import {
+  createConnector,
+  getWalletConnectDiagnosticsSnapshot,
+  prepareWalletConnectConnector,
+  resetWalletConnectConnector,
+  resetWalletConnectStorageAndConnector,
+  type WalletConnector
+} from "./connectors";
 import { shouldPreferWalletConnect } from "./walletEnvironment";
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
 import {
-  HYPERLIQUID_TESTNET_CAIP,
   REOWN_APPKIT_VERSION,
   WALLETCONNECT_CORE_VERSION,
   WALLETCONNECT_RELAY_URL,
+  WALLETCONNECT_SESSION_CAIP,
   hasWalletConnectProjectId,
-  maskWalletConnectProjectId,
-  getWalletConnectProjectId
+  getWalletConnectProjectId,
+  maskWalletConnectProjectId
 } from "./walletConfig";
 import { addressesMatch, formatWalletNetwork, pickPreferredWallet } from "./walletUtils";
 
@@ -25,6 +32,7 @@ type UseWalletConnectionResult = {
   connect: () => Promise<void>;
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
   disconnect: () => Promise<void>;
+  resetWalletConnectState: () => Promise<void>;
 };
 
 export function useWalletConnection(auditAddress: string): UseWalletConnectionResult {
@@ -169,6 +177,19 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     }
   }
 
+  async function resetWalletConnectState() {
+    appendDebugLog("Se restablece el estado local de WalletConnect.");
+    await resetWalletConnectStorageAndConnector();
+    connectorRef.current = null;
+    connectedProviderRef.current = null;
+    detachListenersRef.current?.();
+    detachListenersRef.current = null;
+    setState({
+      status: "disconnected",
+      networkLabel: "Sin red"
+    });
+  }
+
   function attachProviderListeners(provider: Eip1193Provider, wallet: WalletOption, connector: WalletConnector) {
     detachListenersRef.current?.();
     connectedProviderRef.current = provider;
@@ -267,7 +288,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     },
     connect,
     connectWith,
-    disconnect
+    disconnect,
+    resetWalletConnectState
   };
 }
 
@@ -306,7 +328,7 @@ function buildInitialDebugLogs(): string[] {
     `${formatDebugTimestamp()} Version WalletConnect: ${WALLETCONNECT_CORE_VERSION}`,
     `${formatDebugTimestamp()} WalletConnect projectId: ${maskWalletConnectProjectId(projectId)}`,
     `${formatDebugTimestamp()} Relay: ${WALLETCONNECT_RELAY_URL}`,
-    `${formatDebugTimestamp()} Chain solicitada: ${HYPERLIQUID_TESTNET_CAIP}`,
+    `${formatDebugTimestamp()} Chain solicitada: ${WALLETCONNECT_SESSION_CAIP}`,
     `${formatDebugTimestamp()} Estado inicial: ${hasWalletConnectProjectId() ? "projectId disponible" : "projectId ausente"}`
   ];
 }
