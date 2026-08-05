@@ -117,6 +117,7 @@ class WalletConnectConnector implements WalletConnector {
       await provider?.disconnect?.();
     } finally {
       walletConnectProviderPromise = undefined;
+      walletConnectProviderProjectId = undefined;
       clearLegacyWalletStorage();
       writeLegacyWalletSchemaVersion(LEGACY_WALLET_SCHEMA_VERSION);
     }
@@ -124,6 +125,7 @@ class WalletConnectConnector implements WalletConnector {
 }
 
 let walletConnectProviderPromise: Promise<Eip1193Provider> | undefined;
+let walletConnectProviderProjectId: string | undefined;
 
 export function createConnector(option: WalletOption, debug?: WalletDebugLogger): WalletConnector {
   if (option.id === "walletconnect") {
@@ -146,11 +148,16 @@ export function buildWalletConnectOption(): WalletOption {
   };
 }
 
-async function getWalletConnectProvider(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
-  if (!walletConnectProviderPromise) {
-    walletConnectProviderPromise = initializeWalletConnectProvider(undefined, debug);
+async function getWalletConnectProvider(projectId: string, debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+  if (!walletConnectProviderPromise || walletConnectProviderProjectId !== projectId) {
+    walletConnectProviderProjectId = projectId;
+    walletConnectProviderPromise = initializeWalletConnectProvider(projectId, debug);
   } else if (debug) {
-    debug("WalletConnect reutiliza la instancia preparada.");
+    debug(
+      `WalletConnect reutiliza la instancia preparada para el projectId ${
+        projectId === getWalletConnectEmergencyProjectId() ? "publico de contingencia" : "configurado"
+      }.`
+    );
   }
 
   return walletConnectProviderPromise;
@@ -186,29 +193,46 @@ async function initializeWalletConnectProvider(projectIdOverride?: string, debug
 async function connectWalletConnectWithRetry(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
   const preferredProjectId = getWalletConnectProjectId();
   const emergencyProjectId = getWalletConnectEmergencyProjectId();
+  const projectCandidates = getWalletConnectProjectCandidates(preferredProjectId, emergencyProjectId);
 
-  try {
-    const provider = await getWalletConnectProvider(debug);
-    await ensureWalletConnectSession(provider, debug);
-    return provider;
-  } catch (error) {
-    if (!isPublishPayloadError(error)) {
-      throw error;
+  debug?.(
+    `Orden de projectId para WalletConnect: ${projectCandidates
+      .map((projectId) => (projectId === emergencyProjectId ? "publico de contingencia" : "configurado"))
+      .join(" -> ")}.`
+  );
+
+  let lastError: unknown;
+
+  for (let index = 0; index < projectCandidates.length; index += 1) {
+    const projectId = projectCandidates[index];
+
+    try {
+      if (index > 0) {
+        debug?.("Se limpia el estado local de WalletConnect antes de reintentar con el siguiente projectId.");
+        walletConnectProviderPromise = undefined;
+        walletConnectProviderProjectId = undefined;
+        clearLegacyWalletStorage();
+      }
+
+      const provider = await getWalletConnectProvider(projectId, debug);
+      await ensureWalletConnectSession(provider, debug);
+      return provider;
+    } catch (error) {
+      lastError = error;
+
+      if (!isPublishPayloadError(error)) {
+        throw error;
+      }
+
+      if (index === projectCandidates.length - 1) {
+        throw error;
+      }
+
+      debug?.("El relay ha rechazado publicar la propuesta con este projectId. Se probara el siguiente candidato.");
     }
-
-    if (!preferredProjectId || preferredProjectId === emergencyProjectId) {
-      throw error;
-    }
-
-    debug?.("El projectId configurado no ha podido publicar la propuesta. Se reintentara una sola vez con el projectId publico de contingencia.");
-    walletConnectProviderPromise = undefined;
-    clearLegacyWalletStorage();
-
-    const provider = await initializeWalletConnectProvider(emergencyProjectId, debug);
-    walletConnectProviderPromise = Promise.resolve(provider);
-    await ensureWalletConnectSession(provider, debug);
-    return provider;
   }
+
+  throw lastError instanceof Error ? lastError : new Error("WalletConnect no pudo inicializarse.");
 }
 
 async function ensureWalletConnectSession(provider: Eip1193Provider, debug?: WalletDebugLogger) {
@@ -292,9 +316,28 @@ export async function resetLegacyWalletState(): Promise<void> {
     // Ignora sesiones rotas antes de limpiar almacenamiento.
   } finally {
     walletConnectProviderPromise = undefined;
+    walletConnectProviderProjectId = undefined;
     clearLegacyWalletStorage();
     writeLegacyWalletSchemaVersion(LEGACY_WALLET_SCHEMA_VERSION);
   }
+}
+
+function getWalletConnectProjectCandidates(preferredProjectId: string | undefined, emergencyProjectId: string): string[] {
+  const candidates = new Set<string>();
+
+  if (isIosSafari()) {
+    candidates.add(emergencyProjectId);
+    if (preferredProjectId) {
+      candidates.add(preferredProjectId);
+    }
+  } else {
+    if (preferredProjectId) {
+      candidates.add(preferredProjectId);
+    }
+    candidates.add(emergencyProjectId);
+  }
+
+  return [...candidates];
 }
 
 function clearLegacyWalletStorage() {
