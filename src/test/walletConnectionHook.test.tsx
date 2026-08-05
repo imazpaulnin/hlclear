@@ -34,11 +34,16 @@ vi.mock("../wallet/connectors", () => ({
     available: true,
     preferred: false
   })),
-  createConnector: vi.fn(() => ({
-    id: "rabby",
-    name: "Rabby",
-    source: "eip6963",
-    connect: walletMocks.connectMock,
+  createConnector: vi.fn((option, _debug, onUri) => ({
+    id: option.id,
+    name: option.name,
+    source: option.source,
+    connect: async () => {
+      if (option.id === "walletconnect") {
+        onUri?.("wc:test-topic@2?relay-protocol=irn&symKey=test");
+      }
+      return walletMocks.connectMock();
+    },
     disconnect: walletMocks.disconnectMock
   })),
   runLegacyWalletSchemaMigration: vi.fn(),
@@ -67,7 +72,7 @@ vi.mock("../wallet/walletConfig", () => ({
         name: "MetaMask",
         links: {
           native: "metamask://",
-          universal: "https://metamask.app.link"
+          universal: "https://" + "metamask.app.link"
         }
       }
     ]
@@ -97,11 +102,18 @@ function Harness({ auditAddress }: { auditAddress: string }) {
       <div data-testid="address">{wallet.state.address ?? ""}</div>
       <div data-testid="match">{String(wallet.auditAddressMatches)}</div>
       <div data-testid="warning">{wallet.mismatchWarning ?? ""}</div>
+      <div data-testid="wc-uri">{wallet.state.walletConnectUri ?? ""}</div>
       <button type="button" onClick={() => void wallet.connectWith("rabby")}>
         conectar
       </button>
+      <button type="button" onClick={() => void wallet.connectWith("walletconnect")}>
+        conectar-walletconnect
+      </button>
       <button type="button" onClick={() => void wallet.resetWalletState()}>
         reset
+      </button>
+      <button type="button" onClick={wallet.openWalletConnectInRabby}>
+        abrir-rabby
       </button>
     </div>
   );
@@ -110,6 +122,9 @@ function Harness({ auditAddress }: { auditAddress: string }) {
 describe("useWalletConnection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    walletMocks.connectMock.mockReset();
+    walletMocks.disconnectMock.mockReset();
+    walletMocks.resetStateMock.mockReset().mockResolvedValue(undefined);
     window.localStorage.clear();
     walletEnvironmentMocks.isIosSafariMock.mockReturnValue(false);
     walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(false);
@@ -127,7 +142,7 @@ describe("useWalletConnection", () => {
 
     render(<Harness auditAddress="0x3333333333333333333333333333333333333333" />);
     await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
-    fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^conectar$/i }));
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
     expect(screen.getByTestId("match").textContent).toBe("true");
@@ -146,7 +161,7 @@ describe("useWalletConnection", () => {
 
     render(<Harness auditAddress="0x5555555555555555555555555555555555555555" />);
     await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
-    fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^conectar$/i }));
 
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
     expect(screen.getByTestId("match").textContent).toBe("false");
@@ -168,10 +183,10 @@ describe("useWalletConnection", () => {
     render(<Harness auditAddress="0x6666666666666666666666666666666666666666" />);
     await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
 
-    fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^conectar$/i }));
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
 
-    fireEvent.click(screen.getByRole("button", { name: /conectar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^conectar$/i }));
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
     expect(screen.getByTestId("address").textContent).toBe("0x6666666666666666666666666666666666666666");
   });
@@ -184,6 +199,25 @@ describe("useWalletConnection", () => {
 
     await waitFor(() => expect(walletMocks.resetStateMock).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("status").textContent).toBe("disconnected");
+  });
+
+  it("captures the WalletConnect uri while connecting", async () => {
+    walletMocks.connectMock.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Mantiene la conexion pendiente para validar la URI previa a la aprobacion.
+        })
+    );
+
+    render(<Harness auditAddress="0x8888888888888888888888888888888888888888" />);
+    await waitFor(() => expect(screen.getByTestId("wallet-count").textContent).toBe("1"));
+
+    fireEvent.click(screen.getByRole("button", { name: /conectar-walletconnect/i }));
+
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connecting"));
+    await waitFor(() =>
+      expect(screen.getByTestId("wc-uri").textContent).toBe("wc:test-topic@2?relay-protocol=irn&symKey=test")
+    );
   });
 
   it("blocks the generic connection path inside the installed iPhone web app", async () => {

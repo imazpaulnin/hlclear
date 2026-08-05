@@ -135,6 +135,14 @@ export function getWalletMetadata() {
   };
 }
 
+export function buildRabbyWalletConnectUrl(uri: string): string {
+  return `rabby://wc?uri=${encodeURIComponent(uri)}`;
+}
+
+export function buildMetaMaskWalletConnectUrl(uri: string): string {
+  return `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}`;
+}
+
 export function getWalletConnectOrigin(): string {
   if (typeof window === "undefined") {
     return "";

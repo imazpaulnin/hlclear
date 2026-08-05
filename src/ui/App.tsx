@@ -948,6 +948,27 @@ function WalletPanel({
           </div>
         )}
 
+        {wallet.state.walletConnectUri && (
+          <div className="card compact-card stack dense-stack" role="status">
+            <strong>Solicitud WalletConnect lista</strong>
+            <div>
+              No escanees este enlace con la camara normal del movil. Abre la wallet compatible directamente con uno de estos
+              botones antes de que la propuesta caduque.
+            </div>
+            <div className="input-actions">
+              <button className="button secondary full-width" type="button" onClick={wallet.openWalletConnectInRabby}>
+                Abrir Rabby
+              </button>
+              <button className="button secondary full-width" type="button" onClick={wallet.openWalletConnectInMetaMask}>
+                Abrir MetaMask
+              </button>
+              <button className="button secondary full-width" type="button" onClick={() => void wallet.copyWalletConnectUri()}>
+                Copiar enlace WalletConnect
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="input-actions">
           <button className="button full-width" type="button" onClick={() => void wallet.connect()} disabled={wallet.state.status === "connecting"}>
             {wallet.state.status === "connecting" ? "Conectando..." : "Conectar wallet"}

@@ -58,4 +58,5 @@ export interface WalletControllerState {
   chainId?: string;
   networkLabel: string;
   error?: string;
+  walletConnectUri?: string;
 }

@@ -15,6 +15,7 @@ import {
 import { isIosSafari } from "./walletEnvironment";
 
 type WalletDebugLogger = (message: string) => void;
+type WalletConnectUriListener = (uri: string) => void;
 
 const LEGACY_WALLET_SCHEMA_KEY = "hlclear.walletConnectionSchemaVersion";
 const LEGACY_WALLET_SCHEMA_VERSION = 4;
@@ -86,13 +87,15 @@ class WalletConnectConnector implements WalletConnector {
   readonly name = "WalletConnect";
   readonly source = "walletconnect" as const;
   private readonly debug?: WalletDebugLogger;
+  private readonly onUri?: WalletConnectUriListener;
 
-  constructor(debug?: WalletDebugLogger) {
+  constructor(debug?: WalletDebugLogger, onUri?: WalletConnectUriListener) {
     this.debug = debug;
+    this.onUri = onUri;
   }
 
   async connect(): Promise<ConnectedWalletSession> {
-    const provider = await connectWalletConnectWithRetry(this.debug);
+    const provider = await connectWalletConnectWithRetry(this.debug, this.onUri);
 
     const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
     const address = accounts[0];
@@ -128,9 +131,13 @@ class WalletConnectConnector implements WalletConnector {
 let walletConnectProviderPromise: Promise<Eip1193Provider> | undefined;
 let walletConnectProviderProjectId: string | undefined;
 
-export function createConnector(option: WalletOption, debug?: WalletDebugLogger): WalletConnector {
+export function createConnector(
+  option: WalletOption,
+  debug?: WalletDebugLogger,
+  onUri?: WalletConnectUriListener
+): WalletConnector {
   if (option.id === "walletconnect") {
-    return new WalletConnectConnector(debug);
+    return new WalletConnectConnector(debug, onUri);
   }
 
   return new InjectedWalletConnector(option, debug);
@@ -149,10 +156,14 @@ export function buildWalletConnectOption(): WalletOption {
   };
 }
 
-async function getWalletConnectProvider(projectId: string, debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+async function getWalletConnectProvider(
+  projectId: string,
+  debug?: WalletDebugLogger,
+  onUri?: WalletConnectUriListener
+): Promise<Eip1193Provider> {
   if (!walletConnectProviderPromise || walletConnectProviderProjectId !== projectId) {
     walletConnectProviderProjectId = projectId;
-    walletConnectProviderPromise = initializeWalletConnectProvider(projectId, debug);
+    walletConnectProviderPromise = initializeWalletConnectProvider(projectId, debug, onUri);
   } else if (debug) {
     debug(
       `WalletConnect reutiliza la instancia preparada para el projectId ${
@@ -164,7 +175,11 @@ async function getWalletConnectProvider(projectId: string, debug?: WalletDebugLo
   return walletConnectProviderPromise;
 }
 
-async function initializeWalletConnectProvider(projectIdOverride?: string, debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+async function initializeWalletConnectProvider(
+  projectIdOverride?: string,
+  debug?: WalletDebugLogger,
+  onUri?: WalletConnectUriListener
+): Promise<Eip1193Provider> {
   const projectId = projectIdOverride ?? getWalletConnectProjectId();
   if (!projectId) {
     throw new Error("WalletConnect no esta configurado en este entorno.");
@@ -188,11 +203,14 @@ async function initializeWalletConnectProvider(projectIdOverride?: string, debug
     qrModalOptions: getWalletConnectQrModalOptions()
   });
 
-  attachWalletConnectDebug(provider as unknown as Eip1193Provider, debug);
+  attachWalletConnectDebug(provider as unknown as Eip1193Provider, debug, onUri);
   return provider as unknown as Eip1193Provider;
 }
 
-async function connectWalletConnectWithRetry(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+async function connectWalletConnectWithRetry(
+  debug?: WalletDebugLogger,
+  onUri?: WalletConnectUriListener
+): Promise<Eip1193Provider> {
   const preferredProjectId = getWalletConnectProjectId();
   const emergencyProjectId = getWalletConnectEmergencyProjectId();
   const projectCandidates = getWalletConnectProjectCandidates(preferredProjectId, emergencyProjectId);
@@ -216,7 +234,7 @@ async function connectWalletConnectWithRetry(debug?: WalletDebugLogger): Promise
         clearLegacyWalletStorage();
       }
 
-      const provider = await getWalletConnectProvider(projectId, debug);
+      const provider = await getWalletConnectProvider(projectId, debug, onUri);
       await ensureWalletConnectSession(provider, debug);
       return provider;
     } catch (error) {
@@ -263,20 +281,27 @@ function isPublishPayloadError(error: unknown): boolean {
   return error instanceof Error && /Failed to publish custom payload/i.test(error.message);
 }
 
-function attachWalletConnectDebug(provider: Eip1193Provider, debug?: WalletDebugLogger) {
-  if (!debug || !provider.on) {
+function attachWalletConnectDebug(
+  provider: Eip1193Provider,
+  debug?: WalletDebugLogger,
+  onUri?: WalletConnectUriListener
+) {
+  if (!provider.on) {
     return;
   }
 
   provider.on("display_uri", (...args: unknown[]) => {
     const uri = typeof args[0] === "string" ? args[0] : undefined;
-    debug(`WalletConnect ha emitido display_uri.${uri ? ` URI: ${uri}` : ""}`);
+    if (uri) {
+      onUri?.(uri);
+    }
+    debug?.(`WalletConnect ha emitido display_uri.${uri ? ` URI: ${uri}` : ""}`);
   });
   provider.on("connect", () => {
-    debug("WalletConnect ha establecido la sesion.");
+    debug?.("WalletConnect ha establecido la sesion.");
   });
   provider.on("disconnect", () => {
-    debug("WalletConnect ha cerrado la sesion.");
+    debug?.("WalletConnect ha cerrado la sesion.");
   });
 }
 

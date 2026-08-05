@@ -10,6 +10,8 @@ import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
 import { isIosSafari, isIosStandaloneWebApp } from "./walletEnvironment";
 import {
+  buildMetaMaskWalletConnectUrl,
+  buildRabbyWalletConnectUrl,
   getWalletConnectCanonicalUrl,
   getWalletConnectOrigin,
   getWalletConnectProjectId,
@@ -32,6 +34,9 @@ type UseWalletConnectionResult = {
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
   disconnect: () => Promise<void>;
   resetWalletState: () => Promise<void>;
+  openWalletConnectInRabby: () => void;
+  openWalletConnectInMetaMask: () => void;
+  copyWalletConnectUri: () => Promise<void>;
 };
 
 export function useWalletConnection(auditAddress: string): UseWalletConnectionResult {
@@ -88,32 +93,45 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       const message = buildIosStandaloneWalletMessage();
       appendDebugLog(`Conexion bloqueada en web app iPhone: ${message}`);
       setState((current) => ({
-        ...current,
-        status: "error",
-        error: message
-      }));
+      ...current,
+      status: "error",
+      error: message,
+      walletConnectUri: undefined
+    }));
       return;
     }
 
     const wallet = availableWallets.find((option) => option.id === walletId && option.available);
     if (!wallet) {
       setState((current) => ({
-        ...current,
-        status: "error",
-        error: "La wallet seleccionada no esta disponible en este navegador."
-      }));
+      ...current,
+      status: "error",
+      error: "La wallet seleccionada no esta disponible en este navegador.",
+      walletConnectUri: undefined
+    }));
       return;
     }
 
     setState((current) => ({
       ...current,
       status: "connecting",
-      error: undefined
+      error: undefined,
+      walletConnectUri: undefined
     }));
 
     try {
       appendDebugLog(`Se inicia la conexion con ${wallet.name}.`);
-      const connector = createConnector(wallet, (message) => appendDebugLog(message));
+      const connector = createConnector(
+        wallet,
+        (message) => appendDebugLog(message),
+        (uri) => {
+          appendDebugLog("Se recibio una URI de WalletConnect.");
+          setState((current) => ({
+            ...current,
+            walletConnectUri: uri
+          }));
+        }
+      );
       const session = await connector.connect();
       connectorRef.current = connector;
       attachProviderListeners(session.provider, wallet, connector);
@@ -123,7 +141,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       setState((current) => ({
         ...current,
         status: "error",
-        error: describeConnectionError(error)
+        error: describeConnectionError(error),
+        walletConnectUri: undefined
       }));
     }
   }
@@ -140,7 +159,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       setState((current) => ({
         ...current,
         status: "error",
-        error: message
+        error: message,
+        walletConnectUri: undefined
       }));
       return;
     }
@@ -170,7 +190,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     setState((current) => ({
       ...current,
       status: "error",
-      error: `No se detecto ninguna wallet compatible. ${browserHint}`
+      error: `No se detecto ninguna wallet compatible. ${browserHint}`,
+      walletConnectUri: undefined
     }));
   }
 
@@ -256,9 +277,40 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       source: session.source,
       address: session.address,
       chainId: session.chainId,
-      networkLabel: formatWalletNetwork(session.chainId)
+      networkLabel: formatWalletNetwork(session.chainId),
+      walletConnectUri: undefined
     });
     appendDebugLog(`Conexion completada con ${session.connectorName}.`);
+  }
+
+  function openWalletConnectInRabby() {
+    const uri = state.walletConnectUri;
+    if (!uri) {
+      return;
+    }
+
+    appendDebugLog("Se abre Rabby con la URI de WalletConnect.");
+    window.location.assign(buildRabbyWalletConnectUrl(uri));
+  }
+
+  function openWalletConnectInMetaMask() {
+    const uri = state.walletConnectUri;
+    if (!uri) {
+      return;
+    }
+
+    appendDebugLog("Se abre MetaMask con la URI de WalletConnect.");
+    window.location.assign(buildMetaMaskWalletConnectUrl(uri));
+  }
+
+  async function copyWalletConnectUri() {
+    const uri = state.walletConnectUri;
+    if (!uri) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(uri);
+    appendDebugLog("Se copio la URI de WalletConnect al portapapeles.");
   }
 
   const auditAddressMatches = useMemo(() => {
@@ -310,7 +362,10 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     connect,
     connectWith,
     disconnect,
-    resetWalletState
+    resetWalletState,
+    openWalletConnectInRabby,
+    openWalletConnectInMetaMask,
+    copyWalletConnectUri
   };
 }
 
