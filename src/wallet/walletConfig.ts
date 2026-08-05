@@ -87,9 +87,25 @@ export function getWalletConnectRpcMap(): Record<number, string> {
 
 export function getWalletConnectQrModalOptions() {
   return {
-    enableExplorer: true,
+    enableExplorer: false,
     enableMobileFullScreen: true,
-    explorerRecommendedWalletIds: [RABBY_WALLETCONNECT_ID, METAMASK_WALLETCONNECT_ID]
+    mobileWallets: [
+      {
+        id: RABBY_WALLETCONNECT_ID,
+        name: "Rabby",
+        links: {
+          native: "rabby://"
+        }
+      },
+      {
+        id: METAMASK_WALLETCONNECT_ID,
+        name: "MetaMask",
+        links: {
+          native: "metamask://",
+          universal: "https://metamask.app.link"
+        }
+      }
+    ]
   };
 }
 
