@@ -6,7 +6,11 @@ export type WalletConnectionStatus = "disconnected" | "connecting" | "connected"
 
 export interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<unknown>;
-  connect?(): Promise<unknown>;
+  connect?(args?: {
+    chains?: number[];
+    optionalChains?: number[];
+    rpcMap?: Record<number, string>;
+  }): Promise<unknown>;
   disconnect?(): Promise<void>;
   on?(event: string, listener: (...args: unknown[]) => void): void;
   removeListener?(event: string, listener: (...args: unknown[]) => void): void;

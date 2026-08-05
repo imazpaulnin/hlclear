@@ -1,5 +1,16 @@
 const LOCALHOST_WALLETCONNECT_PROJECT_ID = "b56e18d47c72ab683b10814fe9495694";
-const WALLETCONNECT_OPTIONAL_CHAINS = [1, 42161] as const;
+const WALLETCONNECT_REQUIRED_CHAINS = [1] as const;
+const WALLETCONNECT_OPTIONAL_CHAINS = [42161] as const;
+const WALLETCONNECT_REQUIRED_METHODS = [
+  "eth_requestAccounts",
+  "eth_accounts",
+  "eth_chainId",
+  "personal_sign",
+  "eth_signTypedData",
+  "eth_signTypedData_v4",
+  "wallet_switchEthereumChain"
+] as const;
+const WALLETCONNECT_REQUIRED_EVENTS = ["chainChanged", "accountsChanged"] as const;
 const WALLETCONNECT_RPC_MAP = {
   1: "https://cloudflare-eth.com",
   42161: "https://arb1.arbitrum.io/rpc"
@@ -50,6 +61,18 @@ export function hasWalletConnectProjectId(): boolean {
 
 export function getWalletConnectOptionalChains(): [number, ...number[]] {
   return [...WALLETCONNECT_OPTIONAL_CHAINS] as [number, ...number[]];
+}
+
+export function getWalletConnectRequiredChains(): [number, ...number[]] {
+  return [...WALLETCONNECT_REQUIRED_CHAINS] as [number, ...number[]];
+}
+
+export function getWalletConnectRequiredMethods(): [string, ...string[]] {
+  return [...WALLETCONNECT_REQUIRED_METHODS] as [string, ...string[]];
+}
+
+export function getWalletConnectRequiredEvents(): [string, ...string[]] {
+  return [...WALLETCONNECT_REQUIRED_EVENTS] as [string, ...string[]];
 }
 
 export function getWalletConnectRpcMap(): Record<number, string> {

@@ -1,6 +1,9 @@
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 import type { ConnectedWalletSession, Eip1193Provider, WalletConnectorId, WalletOption } from "./types";
 import {
+  getWalletConnectRequiredChains,
+  getWalletConnectRequiredEvents,
+  getWalletConnectRequiredMethods,
   getWalletConnectOptionalChains,
   getWalletConnectProjectId,
   getWalletConnectRpcMap,
@@ -100,7 +103,11 @@ class WalletConnectConnector implements WalletConnector {
         this.debug?.("Abriendo modal oficial de WalletConnect.");
       }
 
-      await provider.connect?.();
+      await provider.connect?.({
+        chains: getWalletConnectRequiredChains(),
+        optionalChains: getWalletConnectOptionalChains(),
+        rpcMap: getWalletConnectRpcMap()
+      });
     }
 
     const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
@@ -178,7 +185,10 @@ async function initializeWalletConnectProvider(debug?: WalletDebugLogger): Promi
     projectId,
     metadata: getWalletMetadata(),
     showQrModal: !isIosSafari(),
+    chains: getWalletConnectRequiredChains(),
     optionalChains: getWalletConnectOptionalChains(),
+    methods: getWalletConnectRequiredMethods(),
+    events: getWalletConnectRequiredEvents(),
     rpcMap: getWalletConnectRpcMap()
   });
 
