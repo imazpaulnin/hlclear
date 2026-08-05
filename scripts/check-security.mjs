@@ -20,7 +20,15 @@ const allowedExternalUrlPatterns = [
   /https?:\/\/rpc\.hyperliquid\.xyz/i,
   /https?:\/\/rpc\.hyperliquid-testnet\.xyz/i,
   /https?:\/\/app\.hyperliquid-testnet\.xyz/i,
-  /https?:\/\/app\.hyperliquid\.xyz/i
+  /https?:\/\/app\.hyperliquid\.xyz/i,
+  /https?:\/\/explorer-api\.walletconnect\.com/i,
+  /https?:\/\/pulse\.walletconnect\.org/i,
+  /https?:\/\/rpc\.walletconnect\.org/i,
+  /https?:\/\/relay\.walletconnect\.org/i,
+  /wss:\/\/relay\.walletconnect\.org/i,
+  /https?:\/\/verify\.walletconnect\.com/i,
+  /https?:\/\/verify\.walletconnect\.org/i,
+  /https?:\/\/echo\.walletconnect\.com/i
 ];
 
 const ignoredDirectories = new Set(["node_modules", "dist", ".git", "reference", "docs"]);
