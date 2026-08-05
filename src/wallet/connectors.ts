@@ -7,6 +7,7 @@ import {
   getWalletMetadata,
   hasWalletConnectProjectId
 } from "./walletConfig";
+import { isIosSafari } from "./walletEnvironment";
 
 type WalletDebugLogger = (message: string) => void;
 
@@ -88,11 +89,17 @@ class WalletConnectConnector implements WalletConnector {
   async connect(): Promise<ConnectedWalletSession> {
     const provider = await getWalletConnectProvider(this.debug);
     const hasSession = Boolean(provider.session);
+    const prefersDirectMobileUri = isIosSafari();
 
     this.debug?.(`WalletConnect inicializado. Sesion previa: ${hasSession ? "si" : "no"}.`);
 
     if (!hasSession) {
-      this.debug?.("Abriendo modal oficial de WalletConnect.");
+      if (prefersDirectMobileUri) {
+        this.debug?.("Safari iPhone detectado. Se evitara el modal AppKit y se lanzara la URI directa de WalletConnect.");
+      } else {
+        this.debug?.("Abriendo modal oficial de WalletConnect.");
+      }
+
       await provider.connect?.();
     }
 
@@ -170,7 +177,7 @@ async function initializeWalletConnectProvider(debug?: WalletDebugLogger): Promi
   const provider = await EthereumProvider.init({
     projectId,
     metadata: getWalletMetadata(),
-    showQrModal: true,
+    showQrModal: !isIosSafari(),
     optionalChains: getWalletConnectOptionalChains(),
     rpcMap: getWalletConnectRpcMap()
   });
@@ -184,8 +191,14 @@ function attachWalletConnectDebug(provider: Eip1193Provider, debug?: WalletDebug
     return;
   }
 
-  provider.on("display_uri", () => {
-    debug("WalletConnect ha emitido display_uri.");
+  provider.on("display_uri", (...args: unknown[]) => {
+    const uri = typeof args[0] === "string" ? args[0] : undefined;
+    debug(`WalletConnect ha emitido display_uri.${uri ? ` URI: ${uri}` : ""}`);
+
+    if (uri && isIosSafari()) {
+      debug("Safari iPhone abrira la URI directa para delegar la conexion a la wallet instalada.");
+      openWalletConnectUri(uri, debug);
+    }
   });
   provider.on("connect", () => {
     debug("WalletConnect ha establecido la sesion.");
@@ -193,6 +206,19 @@ function attachWalletConnectDebug(provider: Eip1193Provider, debug?: WalletDebug
   provider.on("disconnect", () => {
     debug("WalletConnect ha cerrado la sesion.");
   });
+}
+
+function openWalletConnectUri(uri: string, debug?: WalletDebugLogger) {
+  try {
+    // En iPhone Safari esta via evita depender del modal cargado desde AppKit.
+    window.location.href = uri;
+  } catch (error) {
+    debug?.(
+      `No se pudo abrir la URI de WalletConnect: ${
+        error instanceof Error ? error.message : JSON.stringify(error)
+      }`
+    );
+  }
 }
 
 export function runLegacyWalletSchemaMigration() {
