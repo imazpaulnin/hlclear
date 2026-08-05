@@ -51,6 +51,14 @@ vi.mock("../wallet/walletConfig", () => ({
   getWalletConnectCanonicalUrl: vi.fn(() => "https://imazpaulnin.github.io/hlclear/"),
   getWalletConnectOrigin: vi.fn(() => "https://imazpaulnin.github.io"),
   getWalletConnectRpcMap: vi.fn(() => ({ 1: "https://cloudflare-eth.com", 42161: "https://arb1.arbitrum.io/rpc" })),
+  getWalletConnectQrModalOptions: vi.fn(() => ({
+    enableExplorer: true,
+    enableMobileFullScreen: true,
+    explorerRecommendedWalletIds: [
+      "18388be9ac2d02726dbac9777c96efaac06d744b2f6d580fccdd4127a6d01fd1",
+      "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"
+    ]
+  })),
   getWalletMetadata: vi.fn(() => ({
     name: "HLClear",
     description: "Cliente movil de Hyperliquid con auditoria financiera y operativa manual.",
