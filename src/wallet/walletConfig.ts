@@ -31,6 +31,10 @@ export function getWalletConnectProjectId(): string | undefined {
   return undefined;
 }
 
+export function getWalletConnectEmergencyProjectId(): string {
+  return LOCALHOST_WALLETCONNECT_PROJECT_ID;
+}
+
 export function validateWalletConnectProjectId(projectId?: string) {
   const reasons: string[] = [];
   const normalized = projectId?.trim();

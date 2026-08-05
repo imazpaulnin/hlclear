@@ -1,6 +1,7 @@
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 import type { ConnectedWalletSession, Eip1193Provider, WalletConnectorId, WalletOption } from "./types";
 import {
+  getWalletConnectEmergencyProjectId,
   getWalletConnectRequiredChains,
   getWalletConnectRequiredEvents,
   getWalletConnectRequiredMethods,
@@ -90,25 +91,7 @@ class WalletConnectConnector implements WalletConnector {
   }
 
   async connect(): Promise<ConnectedWalletSession> {
-    const provider = await getWalletConnectProvider(this.debug);
-    const hasSession = Boolean(provider.session);
-    const prefersDirectMobileUri = isIosSafari();
-
-    this.debug?.(`WalletConnect inicializado. Sesion previa: ${hasSession ? "si" : "no"}.`);
-
-    if (!hasSession) {
-      if (prefersDirectMobileUri) {
-        this.debug?.("Safari iPhone detectado. Se evitara el modal AppKit y se lanzara la URI directa de WalletConnect.");
-      } else {
-        this.debug?.("Abriendo modal oficial de WalletConnect.");
-      }
-
-      await provider.connect?.({
-        chains: getWalletConnectRequiredChains(),
-        optionalChains: getWalletConnectOptionalChains(),
-        rpcMap: getWalletConnectRpcMap()
-      });
-    }
+    const provider = await connectWalletConnectWithRetry(this.debug);
 
     const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
     const address = accounts[0];
@@ -165,7 +148,7 @@ export function buildWalletConnectOption(): WalletOption {
 
 async function getWalletConnectProvider(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
   if (!walletConnectProviderPromise) {
-    walletConnectProviderPromise = initializeWalletConnectProvider(debug);
+    walletConnectProviderPromise = initializeWalletConnectProvider(undefined, debug);
   } else if (debug) {
     debug("WalletConnect reutiliza la instancia preparada.");
   }
@@ -173,13 +156,17 @@ async function getWalletConnectProvider(debug?: WalletDebugLogger): Promise<Eip1
   return walletConnectProviderPromise;
 }
 
-async function initializeWalletConnectProvider(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
-  const projectId = getWalletConnectProjectId();
+async function initializeWalletConnectProvider(projectIdOverride?: string, debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+  const projectId = projectIdOverride ?? getWalletConnectProjectId();
   if (!projectId) {
     throw new Error("WalletConnect no esta configurado en este entorno.");
   }
 
-  debug?.("Inicializando proveedor WalletConnect.");
+  debug?.(
+    `Inicializando proveedor WalletConnect con projectId ${
+      projectId === getWalletConnectEmergencyProjectId() ? "publico de contingencia" : "configurado"
+    }.`
+  );
 
   const provider = await EthereumProvider.init({
     projectId,
@@ -194,6 +181,61 @@ async function initializeWalletConnectProvider(debug?: WalletDebugLogger): Promi
 
   attachWalletConnectDebug(provider as unknown as Eip1193Provider, debug);
   return provider as unknown as Eip1193Provider;
+}
+
+async function connectWalletConnectWithRetry(debug?: WalletDebugLogger): Promise<Eip1193Provider> {
+  const preferredProjectId = getWalletConnectProjectId();
+  const emergencyProjectId = getWalletConnectEmergencyProjectId();
+
+  try {
+    const provider = await getWalletConnectProvider(debug);
+    await ensureWalletConnectSession(provider, debug);
+    return provider;
+  } catch (error) {
+    if (!isPublishPayloadError(error)) {
+      throw error;
+    }
+
+    if (!preferredProjectId || preferredProjectId === emergencyProjectId) {
+      throw error;
+    }
+
+    debug?.("El projectId configurado no ha podido publicar la propuesta. Se reintentara una sola vez con el projectId publico de contingencia.");
+    walletConnectProviderPromise = undefined;
+    clearLegacyWalletStorage();
+
+    const provider = await initializeWalletConnectProvider(emergencyProjectId, debug);
+    walletConnectProviderPromise = Promise.resolve(provider);
+    await ensureWalletConnectSession(provider, debug);
+    return provider;
+  }
+}
+
+async function ensureWalletConnectSession(provider: Eip1193Provider, debug?: WalletDebugLogger) {
+  const hasSession = Boolean(provider.session);
+  const prefersDirectMobileUri = isIosSafari();
+
+  debug?.(`WalletConnect inicializado. Sesion previa: ${hasSession ? "si" : "no"}.`);
+
+  if (hasSession) {
+    return;
+  }
+
+  if (prefersDirectMobileUri) {
+    debug?.("Safari iPhone detectado. Se evitara el modal AppKit y se lanzara la URI directa de WalletConnect.");
+  } else {
+    debug?.("Abriendo modal oficial de WalletConnect.");
+  }
+
+  await provider.connect?.({
+    chains: getWalletConnectRequiredChains(),
+    optionalChains: getWalletConnectOptionalChains(),
+    rpcMap: getWalletConnectRpcMap()
+  });
+}
+
+function isPublishPayloadError(error: unknown): boolean {
+  return error instanceof Error && /Failed to publish custom payload/i.test(error.message);
 }
 
 function attachWalletConnectDebug(provider: Eip1193Provider, debug?: WalletDebugLogger) {
