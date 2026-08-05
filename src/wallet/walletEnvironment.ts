@@ -6,3 +6,15 @@ export function isIosSafari(targetWindow: Window = window): boolean {
 
   return isIosDevice && isWebKit && !excludedBrowsers;
 }
+
+export function isStandaloneDisplayMode(targetWindow: Window = window): boolean {
+  const mediaMatches =
+    typeof targetWindow.matchMedia === "function" && targetWindow.matchMedia("(display-mode: standalone)").matches;
+  const navigatorStandalone = Boolean((targetWindow.navigator as Navigator & { standalone?: boolean }).standalone);
+
+  return mediaMatches || navigatorStandalone;
+}
+
+export function isIosStandaloneWebApp(targetWindow: Window = window): boolean {
+  return isIosSafari(targetWindow) && isStandaloneDisplayMode(targetWindow);
+}

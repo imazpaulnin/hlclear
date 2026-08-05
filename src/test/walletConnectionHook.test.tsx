@@ -8,6 +8,11 @@ const walletMocks = vi.hoisted(() => ({
   resetStateMock: vi.fn().mockResolvedValue(undefined)
 }));
 
+const walletEnvironmentMocks = vi.hoisted(() => ({
+  isIosSafariMock: vi.fn(() => false),
+  isIosStandaloneWebAppMock: vi.fn(() => false)
+}));
+
 vi.mock("../wallet/injectedWallets", () => ({
   discoverInjectedWallets: vi.fn().mockResolvedValue([
     {
@@ -56,6 +61,11 @@ vi.mock("../wallet/walletConfig", () => ({
   validateWalletConnectProjectId: vi.fn(() => ({ valid: true, reasons: [] }))
 }));
 
+vi.mock("../wallet/walletEnvironment", () => ({
+  isIosSafari: walletEnvironmentMocks.isIosSafariMock,
+  isIosStandaloneWebApp: walletEnvironmentMocks.isIosStandaloneWebAppMock
+}));
+
 function Harness({ auditAddress }: { auditAddress: string }) {
   const wallet = useWalletConnection(auditAddress);
 
@@ -80,6 +90,8 @@ describe("useWalletConnection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    walletEnvironmentMocks.isIosSafariMock.mockReturnValue(false);
+    walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(false);
   });
 
   it("compares the returned address with the audited address", async () => {
@@ -151,5 +163,34 @@ describe("useWalletConnection", () => {
 
     await waitFor(() => expect(walletMocks.resetStateMock).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("status").textContent).toBe("disconnected");
+  });
+
+  it("blocks the generic connection path inside the installed iPhone web app", async () => {
+    walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(true);
+    const { discoverInjectedWallets } = await import("../wallet/injectedWallets");
+    vi.mocked(discoverInjectedWallets).mockResolvedValue([]);
+
+    function ConnectHarness() {
+      const wallet = useWalletConnection("0x7777777777777777777777777777777777777777");
+
+      return (
+        <div>
+          <div data-testid="status">{wallet.state.status}</div>
+          <div data-testid="error">{wallet.state.error ?? ""}</div>
+          <button type="button" onClick={() => void wallet.connect()}>
+            conectar-generico
+          </button>
+        </div>
+      );
+    }
+
+    render(<ConnectHarness />);
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("disconnected"));
+
+    fireEvent.click(screen.getByRole("button", { name: /conectar-generico/i }));
+
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
+    expect(screen.getByTestId("error").textContent).toMatch(/abre hlclear en safari/i);
+    expect(walletMocks.connectMock).not.toHaveBeenCalled();
   });
 });

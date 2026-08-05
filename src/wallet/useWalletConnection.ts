@@ -8,7 +8,7 @@ import {
 } from "./connectors";
 import { discoverInjectedWallets } from "./injectedWallets";
 import type { ConnectedWalletSession, Eip1193Provider, WalletControllerState, WalletOption } from "./types";
-import { isIosSafari } from "./walletEnvironment";
+import { isIosSafari, isIosStandaloneWebApp } from "./walletEnvironment";
 import {
   getWalletConnectCanonicalUrl,
   getWalletConnectOrigin,
@@ -84,6 +84,17 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   }, []);
 
   async function connectWith(walletId: WalletOption["id"]) {
+    if (walletId === "walletconnect" && isIosStandaloneWebApp()) {
+      const message = buildIosStandaloneWalletMessage();
+      appendDebugLog(`Conexion bloqueada en web app iPhone: ${message}`);
+      setState((current) => ({
+        ...current,
+        status: "error",
+        error: message
+      }));
+      return;
+    }
+
     const wallet = availableWallets.find((option) => option.id === walletId && option.available);
     if (!wallet) {
       setState((current) => ({
@@ -121,6 +132,18 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     const wallets = mergeWalletOptions(availableWallets);
     const walletConnect = wallets.find((wallet) => wallet.id === "walletconnect" && wallet.available);
     const preferred = pickPreferredWallet(wallets);
+    const hasInjectedWallet = wallets.some((wallet) => wallet.available && wallet.id !== "walletconnect");
+
+    if (isIosStandaloneWebApp() && !hasInjectedWallet) {
+      const message = buildIosStandaloneWalletMessage();
+      appendDebugLog(`La web app instalada de iPhone no expone una wallet inyectada. ${message}`);
+      setState((current) => ({
+        ...current,
+        status: "error",
+        error: message
+      }));
+      return;
+    }
 
     if (isIosSafari() && walletConnect) {
       appendDebugLog("Safari iPhone detectado. Se prioriza WalletConnect para Safari/PWA.");
@@ -267,7 +290,8 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
       environment: {
         origin: window.location.origin,
         href: window.location.href,
-        iosSafari: isIosSafari()
+        iosSafari: isIosSafari(),
+        iosStandaloneWebApp: isIosStandaloneWebApp()
       },
       wallets: availableWallets,
       walletConnect: {
@@ -299,6 +323,7 @@ function buildInitialDebugLogs(): string[] {
     `${formatDebugTimestamp()} Origen: ${window.location.origin}`,
     `${formatDebugTimestamp()} URL: ${window.location.href}`,
     `${formatDebugTimestamp()} iPhone Safari: ${isIosSafari() ? "si" : "no"}`,
+    `${formatDebugTimestamp()} Web app instalada: ${isIosStandaloneWebApp() ? "si" : "no"}`,
     `${formatDebugTimestamp()} WalletConnect projectId: ${maskWalletConnectProjectId(getWalletConnectProjectId())}`,
     `${formatDebugTimestamp()} WalletConnect canonicalUrl: ${getWalletConnectCanonicalUrl()}`,
     `${formatDebugTimestamp()} Modo de conexion: wallet inyectada + WalletConnect`
@@ -367,4 +392,11 @@ function buildWalletConnectDiagnosis() {
       "Usar el boton Limpiar estado de conexion y reintentar."
     ]
   };
+}
+
+function buildIosStandaloneWalletMessage(): string {
+  return [
+    "La web app instalada de iPhone no esta exponiendo Rabby dentro de este contenedor.",
+    "Abre HLClear en Safari para conectar la wallet o vuelve a anadir el icono al inicio con 'Abrir como app web' desactivado."
+  ].join(" ");
 }

@@ -2,10 +2,23 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../ui/App";
 
+const walletEnvironmentMocks = vi.hoisted(() => ({
+  isIosStandaloneWebAppMock: vi.fn(() => false)
+}));
+
+vi.mock("../wallet/walletEnvironment", async () => {
+  const actual = await vi.importActual<typeof import("../wallet/walletEnvironment")>("../wallet/walletEnvironment");
+  return {
+    ...actual,
+    isIosStandaloneWebApp: walletEnvironmentMocks.isIosStandaloneWebAppMock
+  };
+});
+
 describe("mobile-first shell", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
+    walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(false);
 
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
@@ -72,6 +85,19 @@ describe("mobile-first shell", () => {
     expect(screen.getByRole("button", { name: /Conectar WalletConnect/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Desconectar/i })).toBeInTheDocument();
     expect(screen.getByText(/Direccion auditada/i)).toBeInTheDocument();
+  });
+
+  it("shows the Safari escape hatch for installed iPhone web apps", async () => {
+    walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(true);
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Wallet.*Conexion por Rabby, MetaMask o WalletConnect\./i }));
+
+    expect(screen.getByText(/Modo web app de iPhone detectado/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Abrir esta pagina en Safari/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Conectar WalletConnect/i })).not.toBeInTheDocument();
   });
 
   it("renders the wallet debug screen from Mas", () => {
