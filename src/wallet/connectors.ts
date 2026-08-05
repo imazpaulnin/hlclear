@@ -194,7 +194,7 @@ async function initializeWalletConnectProvider(
   const provider = await EthereumProvider.init({
     projectId,
     metadata: getWalletMetadata(),
-    showQrModal: true,
+    showQrModal: false,
     chains: getWalletConnectRequiredChains(),
     optionalChains: getWalletConnectOptionalChains(),
     methods: getWalletConnectRequiredMethods(),
@@ -266,8 +266,8 @@ async function ensureWalletConnectSession(provider: Eip1193Provider, debug?: Wal
 
   debug?.(
     isIosSafari()
-      ? "Safari iPhone detectado. Se abrira el modal oficial de WalletConnect con Rabby y MetaMask priorizados."
-      : "Abriendo modal oficial de WalletConnect."
+      ? "Safari iPhone detectado. HLClear abrira la sesion WalletConnect sin depender del modal del explorer."
+      : "HLClear abrira la sesion WalletConnect sin usar el modal del explorer."
   );
 
   await provider.connect?.({

@@ -32,6 +32,7 @@ type UseWalletConnectionResult = {
   debugReport: unknown;
   connect: () => Promise<void>;
   connectWith: (walletId: WalletOption["id"]) => Promise<void>;
+  connectWalletConnectWithTarget: (target: "rabby" | "metamask") => Promise<void>;
   disconnect: () => Promise<void>;
   resetWalletState: () => Promise<void>;
   openWalletConnectInRabby: () => void;
@@ -49,6 +50,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   const connectorRef = useRef<WalletConnector | null>(null);
   const connectedProviderRef = useRef<Eip1193Provider | null>(null);
   const detachListenersRef = useRef<(() => void) | null>(null);
+  const pendingWalletConnectTargetRef = useRef<"rabby" | "metamask" | null>(null);
 
   function appendDebugLog(message: string) {
     setDebugLogs((current) => [...current.slice(-199), `${formatDebugTimestamp()} ${message}`]);
@@ -88,7 +90,9 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     detachListenersRef.current?.();
   }, []);
 
-  async function connectWith(walletId: WalletOption["id"]) {
+  async function connectWith(walletId: WalletOption["id"], target?: "rabby" | "metamask") {
+    pendingWalletConnectTargetRef.current = walletId === "walletconnect" ? target ?? null : null;
+
     if (walletId === "walletconnect" && isIosStandaloneWebApp()) {
       const message = buildIosStandaloneWalletMessage();
       appendDebugLog(`Conexion bloqueada en web app iPhone: ${message}`);
@@ -130,6 +134,11 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
             ...current,
             walletConnectUri: uri
           }));
+
+          if (pendingWalletConnectTargetRef.current) {
+            appendDebugLog(`Se abre automaticamente ${pendingWalletConnectTargetRef.current} con la URI de WalletConnect.`);
+            openWalletConnectUri(pendingWalletConnectTargetRef.current, uri);
+          }
         }
       );
       const session = await connector.connect();
@@ -144,7 +153,13 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
         error: describeConnectionError(error),
         walletConnectUri: undefined
       }));
+    } finally {
+      pendingWalletConnectTargetRef.current = null;
     }
+  }
+
+  async function connectWalletConnectWithTarget(target: "rabby" | "metamask") {
+    await connectWith("walletconnect", target);
   }
 
   async function connect() {
@@ -290,7 +305,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     }
 
     appendDebugLog("Se abre Rabby con la URI de WalletConnect.");
-    window.location.assign(buildRabbyWalletConnectUrl(uri));
+    openWalletConnectUri("rabby", uri);
   }
 
   function openWalletConnectInMetaMask() {
@@ -300,7 +315,7 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     }
 
     appendDebugLog("Se abre MetaMask con la URI de WalletConnect.");
-    window.location.assign(buildMetaMaskWalletConnectUrl(uri));
+    openWalletConnectUri("metamask", uri);
   }
 
   async function copyWalletConnectUri() {
@@ -361,12 +376,18 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     },
     connect,
     connectWith,
+    connectWalletConnectWithTarget,
     disconnect,
     resetWalletState,
     openWalletConnectInRabby,
     openWalletConnectInMetaMask,
     copyWalletConnectUri
   };
+}
+
+function openWalletConnectUri(target: "rabby" | "metamask", uri: string) {
+  const nextUrl = target === "rabby" ? buildRabbyWalletConnectUrl(uri) : buildMetaMaskWalletConnectUrl(uri);
+  window.location.assign(nextUrl);
 }
 
 function formatDebugTimestamp(): string {

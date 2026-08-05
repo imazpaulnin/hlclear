@@ -986,6 +986,26 @@ function WalletPanel({
 
       <div className="card compact-card stack dense-stack">
         <h2>Wallets disponibles</h2>
+        {availableWallets.some((option) => option.id === "walletconnect" && option.available) && (
+          <div className="input-actions">
+            <button
+              className="button secondary full-width"
+              type="button"
+              onClick={() => void wallet.connectWalletConnectWithTarget("rabby")}
+              disabled={wallet.state.status === "connecting"}
+            >
+              Conectar Rabby
+            </button>
+            <button
+              className="button secondary full-width"
+              type="button"
+              onClick={() => void wallet.connectWalletConnectWithTarget("metamask")}
+              disabled={wallet.state.status === "connecting"}
+            >
+              Conectar MetaMask
+            </button>
+          </div>
+        )}
         {connectableWallets.length === 0 ? (
           <div className="caption">
             {iosStandaloneWebApp
