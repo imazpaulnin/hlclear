@@ -11,7 +11,7 @@ import { buildDashboard } from "../domain/dashboard";
 import { buildPositionCycles } from "../domain/cycles";
 import { dec } from "../domain/decimal";
 import { determineProfitStatus } from "../domain/profitStatus";
-import { getApiBaseUrl, getCorsProbePayloads, getReadOnlyPayloads } from "../data/hyperliquidApi";
+import { getApiBaseUrl, getCorsProbePayloads, getReadOnlyPayloads, resolveAccountMode } from "../data/hyperliquidApi";
 import type {
   AccountMode,
   ApiPosition,
@@ -357,6 +357,10 @@ describe("api configuration", () => {
       { type: "userRole", user: "0x0000000000000000000000000000000000000000" }
     ]);
   });
+
+  it("30c. userAbstraction default se interpreta como cuenta estandar", () => {
+    expect(resolveAccountMode("default")).toBe("standard");
+  });
 });
 
 describe("account mode and balance reading", () => {
@@ -417,6 +421,25 @@ describe("account mode and balance reading", () => {
     );
     expect(dashboard.summary.totalEquity.exact.toString()).toBe("150.5");
     expect(dashboard.summary.tradingEquity.exact.toString()).toBe("150.5");
+    expect(dashboard.summary.totalEquityVerified).toBe(true);
+  });
+
+  it("33b. default en testnet con saldo en clearinghouseState se muestra como estandar", () => {
+    const dashboard = buildDashboard(
+      makeSnapshot({
+        accountMode: "standard",
+        userAbstractionRaw: "default",
+        accountValue: "999",
+        withdrawable: "999",
+        marginUsed: "0",
+        positions: [],
+        spotBalances: []
+      }),
+      settings
+    );
+    expect(dashboard.summary.accountModeLabel).toBe("Estandar");
+    expect(dashboard.summary.totalEquity.exact.toString()).toBe("999");
+    expect(dashboard.summary.tradingEquity.exact.toString()).toBe("999");
     expect(dashboard.summary.totalEquityVerified).toBe(true);
   });
 

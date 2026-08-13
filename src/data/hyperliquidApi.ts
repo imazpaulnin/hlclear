@@ -442,12 +442,12 @@ function normalizeUserRole(input: unknown): string | undefined {
   return value === undefined || value === null ? undefined : String(value);
 }
 
-function resolveAccountMode(userAbstraction?: string): AccountMode {
+export function resolveAccountMode(userAbstraction?: string): AccountMode {
   const normalized = userAbstraction?.trim();
   if (!normalized) {
     return "unknown";
   }
-  if (normalized === "disabled" || normalized === "standard") {
+  if (normalized === "disabled" || normalized === "standard" || normalized === "default") {
     return "standard";
   }
   if (normalized === "unifiedAccount") {
