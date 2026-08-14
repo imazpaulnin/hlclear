@@ -481,13 +481,19 @@ svg {
   background: rgba(5, 10, 18, 0.62);
   display: grid;
   align-items: end;
-  padding: 0.75rem;
-  z-index: 20;
+  padding:
+    max(0.75rem, env(safe-area-inset-top))
+    0.75rem
+    calc(var(--nav-offset) + 0.75rem);
+  z-index: 40;
 }
 
 .modal {
+  width: min(100%, 36rem);
   max-height: 88vh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - var(--nav-offset) - 1.5rem);
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: 28px 28px 20px 20px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -706,8 +712,15 @@ details summary {
 }
 
 .trade-confirmation-modal {
-  max-width: 36rem;
   margin: 0 auto;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.trade-confirmation-modal .trade-continue-button {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  box-shadow: 0 -12px 24px rgba(7, 17, 31, 0.24);
 }
 
 @media (max-width: 47rem) {
