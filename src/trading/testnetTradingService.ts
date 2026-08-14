@@ -672,7 +672,7 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
     },
     async getAddresses() {
       const accounts = await getViemAddresses(walletClient);
-      return accounts.map((account) => account.toLowerCase() as `0x${string}`);
+      return accounts.map((account) => account as `0x${string}`);
     },
     async getChainId() {
       const rawChainId = (await provider.request({ method: "eth_chainId" })) as string;
