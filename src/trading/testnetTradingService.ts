@@ -1,5 +1,7 @@
 import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocketTransport } from "@nktkas/hyperliquid";
 import type { AbstractViemJsonRpcAccount } from "@nktkas/hyperliquid/signing";
+import { createWalletClient, custom } from "viem";
+import { getAddresses as getViemAddresses, signTypedData as signTypedDataWithViem } from "viem/actions";
 import { calculateBreakEvenPrice } from "../domain/trade/breakEven";
 import { getTradeOutcomeStatus } from "../domain/trade/simulation";
 import { dec } from "../domain/decimal";
@@ -657,22 +659,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractViemJsonRpcAccount {
+  const walletClient = createWalletClient({
+    transport: custom(provider)
+  });
+
   return {
     async signTypedData(params) {
       const [address] = await this.getAddresses();
-      const typedData = {
-        domain: params.domain,
-        types: params.types,
-        primaryType: params.primaryType,
-        message: params.message
-      };
-      const payload = JSON.stringify(typedData);
-      const signature = await requestTypedDataSignature(provider, address, payload, typedData);
+      const signature = await requestTypedDataSignature(walletClient, provider, address, params);
 
       return String(signature) as `0x${string}`;
     },
     async getAddresses() {
-      const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
+      const accounts = await getViemAddresses(walletClient);
       return accounts.map((account) => account.toLowerCase() as `0x${string}`);
     },
     async getChainId() {
@@ -683,6 +682,50 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
 }
 
 async function requestTypedDataSignature(
+  walletClient: ReturnType<typeof createWalletClient>,
+  provider: Eip1193Provider,
+  address: `0x${string}`,
+  typedData: {
+    domain: Record<string, unknown>;
+    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
+    primaryType: string;
+    message: Record<string, unknown>;
+  }
+) {
+  try {
+    return await signTypedDataWithViem(walletClient, {
+      account: address,
+      domain: typedData.domain as {
+        name: string;
+        version: string;
+        chainId: number;
+        verifyingContract: `0x${string}`;
+      },
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message
+    });
+  } catch (error) {
+    const payload = JSON.stringify({
+      domain: typedData.domain,
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" }
+        ],
+        ...typedData.types
+      },
+      primaryType: typedData.primaryType,
+      message: typedData.message
+    });
+
+    return await requestTypedDataSignatureFallback(provider, address, payload, typedData, error);
+  }
+}
+
+async function requestTypedDataSignatureFallback(
   provider: Eip1193Provider,
   address: `0x${string}`,
   payload: string,
@@ -691,16 +734,21 @@ async function requestTypedDataSignature(
     types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
     primaryType: string;
     message: Record<string, unknown>;
-  }
+  },
+  initialError: unknown
 ) {
   const attempts: Array<{ method: string; params: unknown[] }> = [
     { method: "eth_signTypedData_v4", params: [address, payload] },
+    { method: "eth_signTypedData_v4", params: [payload, address] },
     { method: "eth_signTypedData_v4", params: [address, typedData] },
+    { method: "eth_signTypedData_v3", params: [address, payload] },
+    { method: "eth_signTypedData_v3", params: [payload, address] },
     { method: "eth_signTypedData", params: [address, typedData] },
+    { method: "eth_signTypedData", params: [payload, address] },
     { method: "eth_signTypedData", params: [address, payload] }
   ];
 
-  let lastError: unknown;
+  let lastError: unknown = initialError;
   for (const attempt of attempts) {
     try {
       return await provider.request({
