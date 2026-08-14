@@ -87,7 +87,7 @@ describe("mobile-first shell", () => {
     expect(screen.getByText(/Direccion auditada/i)).toBeInTheDocument();
   });
 
-  it("shows the Safari escape hatch for installed iPhone web apps", async () => {
+  it("keeps WalletConnect visible inside the installed iPhone web app", async () => {
     walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(true);
 
     render(<App />);
@@ -95,9 +95,8 @@ describe("mobile-first shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Mas$/i }));
     fireEvent.click(screen.getByRole("button", { name: /Wallet.*Conexion por Rabby, MetaMask o WalletConnect\./i }));
 
-    expect(screen.getByText(/Modo web app de iPhone detectado/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Abrir esta pagina en Safari/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Conectar WalletConnect/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Modo web app de iPhone detectado/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Conectar WalletConnect/i })).toBeInTheDocument();
   });
 
   it("renders the wallet debug screen from Mas", () => {

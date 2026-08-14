@@ -5,7 +5,6 @@ import { dec } from "../domain/decimal";
 import { buildDashboard } from "../domain/dashboard";
 import { createEmptyState, loadStoredState, persistState } from "../domain/storage";
 import { useWalletConnection } from "../wallet/useWalletConnection";
-import { isIosStandaloneWebApp } from "../wallet/walletEnvironment";
 import { walletStatusLabel } from "../wallet/walletUtils";
 import { TradeTab } from "./TradeTab";
 import type {
@@ -892,29 +891,12 @@ function WalletPanel({
   wallet: ReturnType<typeof useWalletConnection>;
   auditAddress: string;
 }) {
-  const iosStandaloneWebApp = isIosStandaloneWebApp();
   const connectedAddress = wallet.state.address;
   const availableWallets = wallet.availableWallets.filter((option) => option.available);
-  const connectableWallets = availableWallets.filter((option) => !(iosStandaloneWebApp && option.id === "walletconnect"));
   const unavailableWallets = wallet.availableWallets.filter((option) => !option.available);
 
   return (
     <div className="stack">
-      {iosStandaloneWebApp && (
-        <div className="card warning" role="status">
-          <strong>Modo web app de iPhone detectado</strong>
-          <div>En este contenedor iOS no esta exponiendo Rabby de forma utilizable. Usa el boton de abajo para abrir esta misma pantalla en Safari.</div>
-          <div className="input-actions">
-            <button className="button secondary full-width" type="button" onClick={openWalletPageInSafari}>
-              Abrir esta pagina en Safari
-            </button>
-            <button className="button secondary full-width" type="button" onClick={() => void copyJson(buildWalletPageUrl())}>
-              Copiar enlace de HLClear
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="card compact-card stack dense-stack">
         <h2>Estado de conexion</h2>
         <Line label="Estado de conexion" value={walletStatusLabel(wallet.state.status)} />
@@ -1006,14 +988,12 @@ function WalletPanel({
             </button>
           </div>
         )}
-        {connectableWallets.length === 0 ? (
+        {availableWallets.length === 0 ? (
           <div className="caption">
-            {iosStandaloneWebApp
-              ? "Desde la web app instalada de iPhone no hay una wallet utilizable. Abre HLClear en Safari para conectar Rabby."
-              : "No hay wallets expuestas por este navegador. Usa WalletConnect o abre HLClear dentro del navegador de Rabby o MetaMask."}
+            No hay wallets expuestas por este navegador. Usa WalletConnect o abre HLClear dentro del navegador de Rabby o MetaMask.
           </div>
         ) : (
-          connectableWallets.map((option) => (
+          availableWallets.map((option) => (
             <button
               key={`${option.id}-${option.source}`}
               className="button secondary full-width"
@@ -1026,9 +1006,7 @@ function WalletPanel({
           ))
         )}
         <div className="caption">
-          {iosStandaloneWebApp
-            ? "La clave privada no sale del dispositivo. En iPhone, la ruta estable es abrir HLClear en Safari para que Rabby gestione la conexion."
-            : "La clave privada no sale del dispositivo. Puedes conectar por wallet inyectada o por WalletConnect segun el navegador."}
+          La clave privada no sale del dispositivo. Puedes conectar por wallet inyectada o por WalletConnect segun el navegador.
         </div>
       </div>
 
@@ -1544,21 +1522,6 @@ async function copyJson(value: unknown) {
     await navigator.clipboard.writeText(typeof value === "string" ? value : JSON.stringify(value, null, 2));
   } catch {
     // Ignore clipboard permission errors on restrictive mobile contexts.
-  }
-}
-
-function buildWalletPageUrl(): string {
-  const url = new URL(window.location.href);
-  url.searchParams.set("tab", "wallet");
-  url.searchParams.delete("more");
-  return url.toString();
-}
-
-function openWalletPageInSafari() {
-  const target = buildWalletPageUrl();
-  const popup = window.open(target, "_blank", "noopener,noreferrer");
-  if (!popup) {
-    window.location.assign(target);
   }
 }
 

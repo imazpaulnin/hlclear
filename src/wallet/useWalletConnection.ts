@@ -93,18 +93,6 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
   async function connectWith(walletId: WalletOption["id"], target?: "rabby" | "metamask") {
     pendingWalletConnectTargetRef.current = walletId === "walletconnect" ? target ?? null : null;
 
-    if (walletId === "walletconnect" && isIosStandaloneWebApp()) {
-      const message = buildIosStandaloneWalletMessage();
-      appendDebugLog(`Conexion bloqueada en web app iPhone: ${message}`);
-      setState((current) => ({
-      ...current,
-      status: "error",
-      error: message,
-      walletConnectUri: undefined
-    }));
-      return;
-    }
-
     const wallet = availableWallets.find((option) => option.id === walletId && option.available);
     if (!wallet) {
       setState((current) => ({
@@ -166,19 +154,6 @@ export function useWalletConnection(auditAddress: string): UseWalletConnectionRe
     const wallets = mergeWalletOptions(availableWallets);
     const walletConnect = wallets.find((wallet) => wallet.id === "walletconnect" && wallet.available);
     const preferred = pickPreferredWallet(wallets);
-    const hasInjectedWallet = wallets.some((wallet) => wallet.available && wallet.id !== "walletconnect");
-
-    if (isIosStandaloneWebApp() && !hasInjectedWallet) {
-      const message = buildIosStandaloneWalletMessage();
-      appendDebugLog(`La web app instalada de iPhone no expone una wallet inyectada. ${message}`);
-      setState((current) => ({
-        ...current,
-        status: "error",
-        error: message,
-        walletConnectUri: undefined
-      }));
-      return;
-    }
 
     if (isIosSafari() && walletConnect) {
       appendDebugLog("Safari iPhone detectado. Se prioriza WalletConnect para Safari/PWA.");
@@ -468,11 +443,4 @@ function buildWalletConnectDiagnosis() {
       "Usar el boton Limpiar estado de conexion y reintentar."
     ]
   };
-}
-
-function buildIosStandaloneWalletMessage(): string {
-  return [
-    "La web app instalada de iPhone no esta exponiendo Rabby dentro de este contenedor.",
-    "Abre HLClear en Safari para conectar la wallet o vuelve a anadir el icono al inicio con 'Abrir como app web' desactivado."
-  ].join(" ");
 }

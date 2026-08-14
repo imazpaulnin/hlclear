@@ -220,10 +220,19 @@ describe("useWalletConnection", () => {
     );
   });
 
-  it("blocks the generic connection path inside the installed iPhone web app", async () => {
+  it("allows the generic connection path inside the installed iPhone web app", async () => {
     walletEnvironmentMocks.isIosStandaloneWebAppMock.mockReturnValue(true);
     const { discoverInjectedWallets } = await import("../wallet/injectedWallets");
     vi.mocked(discoverInjectedWallets).mockResolvedValue([]);
+    walletEnvironmentMocks.isIosSafariMock.mockReturnValue(true);
+    walletMocks.connectMock.mockResolvedValue({
+      connectorId: "walletconnect",
+      connectorName: "WalletConnect",
+      source: "walletconnect",
+      address: "0x7777777777777777777777777777777777777777",
+      chainId: "0xa4b1",
+      provider: {}
+    });
 
     function ConnectHarness() {
       const wallet = useWalletConnection("0x7777777777777777777777777777777777777777");
@@ -244,8 +253,7 @@ describe("useWalletConnection", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /conectar-generico/i }));
 
-    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("error"));
-    expect(screen.getByTestId("error").textContent).toMatch(/abre hlclear en safari/i);
-    expect(walletMocks.connectMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("connected"));
+    expect(walletMocks.connectMock).toHaveBeenCalledTimes(1);
   });
 });
