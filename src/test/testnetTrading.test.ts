@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { cancelAllOrders, closePosition, getExecutionEligibility, normalizeTradingError, submitPreparedTrade } from "../trading/testnetTradingService";
+import {
+  cancelAllOrders,
+  closePosition,
+  createBrowserWalletAdapter,
+  getExecutionEligibility,
+  normalizeTradingError,
+  submitPreparedTrade
+} from "../trading/testnetTradingService";
 import type { HyperliquidSnapshot } from "../domain/types";
 import type { LivePosition, TradingSnapshot } from "../trading/types";
 
@@ -206,5 +213,87 @@ describe("testnet trading service", () => {
     expect(normalizeTradingError(new Error("insufficient margin"))).toBe("Saldo o margen insuficiente para completar la operacion.");
     expect(normalizeTradingError(new Error("nonce already used"))).toContain("nonce");
     expect(normalizeTradingError(new Error("socket closed"))).toBe("No se pudo contactar con Hyperliquid Testnet.");
+    expect(normalizeTradingError(new Error("Failed to sign the typed data using the wallet"))).toContain("EIP-712");
+  });
+
+  it("falls back across typed-data RPC variants for mobile wallets", async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(["0x890d13efc8e7fd6e97825b9d35b319a6b07d1460"])
+      .mockRejectedValueOnce(new Error("method not supported"))
+      .mockResolvedValueOnce("0xsigned");
+
+    const wallet = createBrowserWalletAdapter({ request });
+    const signature = await wallet.signTypedData({
+      domain: {
+        name: "Exchange",
+        version: "1",
+        chainId: 1337,
+        verifyingContract: "0x0000000000000000000000000000000000000000"
+      },
+      types: {
+        Agent: [
+          { name: "source", type: "string" },
+          { name: "connectionId", type: "bytes32" }
+        ]
+      },
+      primaryType: "Agent",
+      message: {
+        source: "b",
+        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    });
+
+    expect(signature).toBe("0xsigned");
+    expect(request).toHaveBeenNthCalledWith(2, {
+      method: "eth_signTypedData_v4",
+      params: [
+        "0x890d13efc8e7fd6e97825b9d35b319a6b07d1460",
+        JSON.stringify({
+          domain: {
+            name: "Exchange",
+            version: "1",
+            chainId: 1337,
+            verifyingContract: "0x0000000000000000000000000000000000000000"
+          },
+          types: {
+            Agent: [
+              { name: "source", type: "string" },
+              { name: "connectionId", type: "bytes32" }
+            ]
+          },
+          primaryType: "Agent",
+          message: {
+            source: "b",
+            connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        })
+      ]
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      method: "eth_signTypedData_v4",
+      params: [
+        "0x890d13efc8e7fd6e97825b9d35b319a6b07d1460",
+        {
+          domain: {
+            name: "Exchange",
+            version: "1",
+            chainId: 1337,
+            verifyingContract: "0x0000000000000000000000000000000000000000"
+          },
+          types: {
+            Agent: [
+              { name: "source", type: "string" },
+              { name: "connectionId", type: "bytes32" }
+            ]
+          },
+          primaryType: "Agent",
+          message: {
+            source: "b",
+            connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ]
+    });
   });
 });

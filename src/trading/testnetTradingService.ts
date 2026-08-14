@@ -396,6 +396,9 @@ export function normalizeTradingError(error: unknown): string {
   if (lower.includes("user rejected") || lower.includes("rejected the request") || lower.includes("denied")) {
     return "Firma cancelada en la wallet.";
   }
+  if (lower.includes("failed to sign the typed data using the wallet") || lower.includes("sign typed data")) {
+    return "La wallet conectada no pudo firmar la solicitud EIP-712 de Hyperliquid. Reintenta y, si sigue igual, cambia la variante de firma compatible con Rabby/WalletConnect.";
+  }
   if (lower.includes("insufficient") || lower.includes("margin")) {
     return "Saldo o margen insuficiente para completar la operacion.";
   }
@@ -653,21 +656,18 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
-function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractViemJsonRpcAccount {
+export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractViemJsonRpcAccount {
   return {
     async signTypedData(params) {
       const [address] = await this.getAddresses();
-      const payload = JSON.stringify({
+      const typedData = {
         domain: params.domain,
         types: params.types,
         primaryType: params.primaryType,
         message: params.message
-      });
-
-      const signature = await provider.request({
-        method: "eth_signTypedData_v4",
-        params: [address, payload]
-      });
+      };
+      const payload = JSON.stringify(typedData);
+      const signature = await requestTypedDataSignature(provider, address, payload, typedData);
 
       return String(signature) as `0x${string}`;
     },
@@ -680,6 +680,41 @@ function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractViemJson
       return Number.parseInt(rawChainId, 16);
     }
   };
+}
+
+async function requestTypedDataSignature(
+  provider: Eip1193Provider,
+  address: `0x${string}`,
+  payload: string,
+  typedData: {
+    domain: Record<string, unknown>;
+    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
+    primaryType: string;
+    message: Record<string, unknown>;
+  }
+) {
+  const attempts: Array<{ method: string; params: unknown[] }> = [
+    { method: "eth_signTypedData_v4", params: [address, payload] },
+    { method: "eth_signTypedData_v4", params: [address, typedData] },
+    { method: "eth_signTypedData", params: [address, typedData] },
+    { method: "eth_signTypedData", params: [address, payload] }
+  ];
+
+  let lastError: unknown;
+  for (const attempt of attempts) {
+    try {
+      return await provider.request({
+        method: attempt.method,
+        params: attempt.params
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to sign the typed data using the wallet");
 }
 
 function stringOrUndefined(value: unknown): string | undefined {
