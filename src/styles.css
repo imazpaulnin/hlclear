@@ -564,6 +564,7 @@ details summary {
 
 .trade-shell {
   gap: 1rem;
+  padding-bottom: calc(var(--nav-offset) + 0.5rem);
 }
 
 .trade-env-switch {
@@ -711,6 +712,13 @@ details summary {
   font-size: 1rem;
 }
 
+.trade-shell > .trade-continue-button {
+  position: sticky;
+  bottom: calc(var(--nav-offset) - env(safe-area-inset-bottom) + 0.5rem);
+  z-index: 3;
+  box-shadow: 0 -12px 24px rgba(7, 17, 31, 0.24);
+}
+
 .trade-confirmation-modal {
   margin: 0 auto;
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
@@ -718,9 +726,14 @@ details summary {
 
 .trade-confirmation-modal .trade-continue-button {
   position: sticky;
-  bottom: 0;
+  bottom: env(safe-area-inset-bottom);
   z-index: 1;
   box-shadow: 0 -12px 24px rgba(7, 17, 31, 0.24);
+}
+
+body:has(.modal-backdrop) .bottom-nav {
+  opacity: 0;
+  pointer-events: none;
 }
 
 @media (max-width: 47rem) {
