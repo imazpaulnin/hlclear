@@ -1,4 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+
+const signTypedData = vi.fn();
+const getAddress = vi.fn();
+const getNetwork = vi.fn();
+
+vi.mock("ethers", () => ({
+  BrowserProvider: class {
+    getSigner() {
+      return {
+        signTypedData,
+        getAddress
+      };
+    }
+
+    getNetwork() {
+      return getNetwork();
+    }
+  }
+}));
 import {
   cancelAllOrders,
   closePosition,
@@ -295,70 +314,50 @@ describe("testnet trading service", () => {
     expect(normalizeTradingError(new Error("L1 error: User or API Wallet 0x123 does not exist."))).toContain("Hyperliquid no reconocio");
   });
 
-  it("includes EIP712Domain and falls back across typed-data RPC variants for mobile wallets", async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce(["0x890d13efc8e7fd6e97825b9d35b319a6b07d1460"])
-      .mockRejectedValueOnce(new Error("method not supported"))
-      .mockResolvedValueOnce("0xsigned");
+  it("uses the browser signer path documented by the SDK for connected wallets", async () => {
+    signTypedData.mockResolvedValueOnce("0xsigned");
+    getAddress.mockResolvedValueOnce("0x890D13EFc8E7fD6e97825b9D35b319a6B07d1460");
+    getNetwork.mockResolvedValueOnce({ chainId: 42161n });
 
-    const wallet = createBrowserWalletAdapter({ request });
-    const signature = await wallet.signTypedData({
-      domain: {
+    const wallet = createBrowserWalletAdapter({ request: vi.fn() });
+    const signature = await wallet.signTypedData(
+      {
         name: "Exchange",
         version: "1",
         chainId: 1337,
         verifyingContract: "0x0000000000000000000000000000000000000000"
       },
-      types: {
+      {
         Agent: [
           { name: "source", type: "string" },
           { name: "connectionId", type: "bytes32" }
         ]
       },
-      primaryType: "Agent",
-      message: {
+      {
         source: "b",
-        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111",
-        signatureChainId: "0xa4b1",
-        type: "approveAgent"
+        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
       }
-    });
+    );
 
     expect(signature).toBe("0xsigned");
-    const signAttempts = request.mock.calls
-      .map((call) => call[0] as { method?: string; params?: unknown[] })
-      .filter((call) => call.method?.startsWith("eth_signTypedData"));
-    const serializedParams = signAttempts.flatMap((attempt) => (attempt.params ?? []).map((param) => (typeof param === "string" ? param : JSON.stringify(param))));
-    const payloadCandidates = signAttempts
-      .flatMap((attempt) => attempt.params ?? [])
-      .map((param) => {
-        if (typeof param !== "string") {
-          return typeof param === "object" && param !== null ? param : undefined;
-        }
-
-        try {
-          return JSON.parse(param) as Record<string, unknown>;
-        } catch {
-          return undefined;
-        }
-      })
-      .filter((candidate): candidate is Record<string, unknown> => Boolean(candidate && typeof candidate === "object"));
-
-    expect(signAttempts.length).toBeGreaterThan(0);
-    expect(
-      serializedParams.some((param) => param.includes("\"EIP712Domain\""))
-    ).toBe(true);
-    expect(
-      payloadCandidates.some((candidate) => {
-        const message = candidate.message as Record<string, unknown> | undefined;
-        return (
-          Boolean(message) &&
-          message?.connectionId === "0x1111111111111111111111111111111111111111111111111111111111111111" &&
-          !("signatureChainId" in message) &&
-          !("type" in message)
-        );
-      })
-    ).toBe(true);
+    expect(getAddress).not.toHaveBeenCalled();
+    expect(signTypedData).toHaveBeenCalledWith(
+      {
+        name: "Exchange",
+        version: "1",
+        chainId: 1337,
+        verifyingContract: "0x0000000000000000000000000000000000000000"
+      },
+      {
+        Agent: [
+          { name: "source", type: "string" },
+          { name: "connectionId", type: "bytes32" }
+        ]
+      },
+      {
+        source: "b",
+        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    );
   });
 });

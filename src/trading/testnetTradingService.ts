@@ -1,6 +1,6 @@
 import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocketTransport } from "@nktkas/hyperliquid";
-import type { AbstractViemJsonRpcAccount } from "@nktkas/hyperliquid/signing";
-import { createWalletClient, custom } from "viem";
+import type { AbstractEthersV6Signer } from "@nktkas/hyperliquid/signing";
+import { BrowserProvider } from "ethers";
 import { calculateBreakEvenPrice } from "../domain/trade/breakEven";
 import { getTradeOutcomeStatus } from "../domain/trade/simulation";
 import { dec } from "../domain/decimal";
@@ -675,20 +675,22 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
-export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractViemJsonRpcAccount {
-  return {
-    async signTypedData(params) {
-      const [address] = await getProviderAddresses(provider);
-      const signature = await requestTypedDataSignature(provider, address, params);
+export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractEthersV6Signer {
+  const browserProvider = new BrowserProvider(provider);
 
-      return String(signature) as `0x${string}`;
+  return {
+    provider: browserProvider,
+    async signTypedData(domain, types, message) {
+      const signer = await browserProvider.getSigner();
+      return signer.signTypedData(
+        domain as Parameters<typeof signer.signTypedData>[0],
+        types as Parameters<typeof signer.signTypedData>[1],
+        message as Parameters<typeof signer.signTypedData>[2]
+      );
     },
-    async getAddresses() {
-      return getProviderAddresses(provider);
-    },
-    async getChainId() {
-      const rawChainId = (await provider.request({ method: "eth_chainId" })) as string;
-      return Number.parseInt(rawChainId, 16);
+    async getAddress() {
+      const signer = await browserProvider.getSigner();
+      return normalizeAddress(await signer.getAddress());
     }
   };
 }
@@ -696,115 +698,6 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
 async function ensureAgentApproved(bundle: TransportBundle): Promise<void> {
   bundle.agentApproved = true;
 }
-
-async function requestTypedDataSignature(
-  provider: Eip1193Provider,
-  address: `0x${string}`,
-  typedData: {
-    domain: Record<string, unknown>;
-    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
-    primaryType: string;
-    message: Record<string, unknown>;
-  }
-) {
-  const allowedFieldNames = new Set((typedData.types[typedData.primaryType] ?? []).map((field) => field.name));
-  const filteredMessage = Object.fromEntries(
-    Object.entries(typedData.message).filter(([key]) => allowedFieldNames.has(key))
-  );
-  const typesWithDomain = "EIP712Domain" in typedData.types
-    ? typedData.types
-    : {
-        EIP712Domain: [
-          { name: "name", type: "string" },
-          { name: "version", type: "string" },
-          { name: "chainId", type: "uint256" },
-          { name: "verifyingContract", type: "address" }
-        ],
-        ...typedData.types
-      };
-  const payloadObject = {
-    domain: typedData.domain,
-    types: typesWithDomain,
-    primaryType: typedData.primaryType,
-    message: filteredMessage
-  };
-  const payload = JSON.stringify(payloadObject);
-
-  try {
-    return await signTypedDataWithViem(provider, address, payloadObject);
-  } catch (error) {
-    return await requestTypedDataSignatureFallback(provider, address, payload, payloadObject, error);
-  }
-}
-
-async function requestTypedDataSignatureFallback(
-  provider: Eip1193Provider,
-  address: `0x${string}`,
-  payload: string,
-  typedData: {
-    domain: Record<string, unknown>;
-    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
-    primaryType: string;
-    message: Record<string, unknown>;
-  },
-  initialError?: unknown
-) {
-  const attempts: Array<{ method: string; params: unknown[] }> = [
-    { method: "eth_signTypedData_v4", params: [address, payload] },
-    { method: "eth_signTypedData_v4", params: [address, typedData] },
-    { method: "eth_signTypedData", params: [address, payload] },
-    { method: "eth_signTypedData_v3", params: [address, payload] },
-    { method: "eth_signTypedData", params: [address, typedData] },
-    { method: "eth_signTypedData_v4", params: [payload, address] },
-    { method: "eth_signTypedData_v3", params: [payload, address] },
-    { method: "eth_signTypedData", params: [payload, address] }
-  ];
-
-  let lastError: unknown = initialError;
-  for (const attempt of attempts) {
-    try {
-      return await provider.request({
-        method: attempt.method,
-        params: attempt.params
-      });
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Failed to sign the typed data using the wallet");
-}
-
-async function signTypedDataWithViem(
-  provider: Eip1193Provider,
-  address: `0x${string}`,
-  typedData: {
-    domain: Record<string, unknown>;
-    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
-    primaryType: string;
-    message: Record<string, unknown>;
-  }
-) {
-  const walletClient = createWalletClient({
-    transport: custom(provider)
-  });
-
-  return walletClient.signTypedData({
-    account: address,
-    domain: typedData.domain as {
-      name?: string;
-      version?: string;
-      chainId?: number;
-      verifyingContract?: `0x${string}`;
-    },
-    types: typedData.types as Record<string, Array<{ name: string; type: string }>>,
-    primaryType: typedData.primaryType,
-    message: typedData.message
-  });
-}
-
 
 function stringOrUndefined(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : String(value);
