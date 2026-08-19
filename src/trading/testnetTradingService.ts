@@ -1,5 +1,6 @@
 import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocketTransport } from "@nktkas/hyperliquid";
 import type { AbstractViemJsonRpcAccount } from "@nktkas/hyperliquid/signing";
+import { createWalletClient, custom } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { calculateBreakEvenPrice } from "../domain/trade/breakEven";
 import { getTradeOutcomeStatus } from "../domain/trade/simulation";
@@ -703,6 +704,7 @@ async function ensureAgentApproved(bundle: TransportBundle): Promise<void> {
     return;
   }
 
+  await ensureProviderChain(bundle.approvalExchangeClient);
   await bundle.approvalExchangeClient.approveAgent({
     agentAddress: bundle.agentAddress,
     agentName: ""
@@ -743,7 +745,11 @@ async function requestTypedDataSignature(
   };
   const payload = JSON.stringify(payloadObject);
 
-  return await requestTypedDataSignatureFallback(provider, address, payload, payloadObject);
+  try {
+    return await signTypedDataWithViem(provider, address, payloadObject);
+  } catch (error) {
+    return await requestTypedDataSignatureFallback(provider, address, payload, payloadObject, error);
+  }
 }
 
 async function requestTypedDataSignatureFallback(
@@ -755,7 +761,8 @@ async function requestTypedDataSignatureFallback(
     types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
     primaryType: string;
     message: Record<string, unknown>;
-  }
+  },
+  initialError?: unknown
 ) {
   const attempts: Array<{ method: string; params: unknown[] }> = [
     { method: "eth_signTypedData_v4", params: [address, payload] },
@@ -768,7 +775,7 @@ async function requestTypedDataSignatureFallback(
     { method: "eth_signTypedData", params: [payload, address] }
   ];
 
-  let lastError: unknown;
+  let lastError: unknown = initialError;
   for (const attempt of attempts) {
     try {
       return await provider.request({
@@ -783,6 +790,56 @@ async function requestTypedDataSignatureFallback(
   throw lastError instanceof Error
     ? lastError
     : new Error("Failed to sign the typed data using the wallet");
+}
+
+async function signTypedDataWithViem(
+  provider: Eip1193Provider,
+  address: `0x${string}`,
+  typedData: {
+    domain: Record<string, unknown>;
+    types: Record<string, ReadonlyArray<{ name: string; type: string }>>;
+    primaryType: string;
+    message: Record<string, unknown>;
+  }
+) {
+  const walletClient = createWalletClient({
+    transport: custom(provider)
+  });
+
+  return walletClient.signTypedData({
+    account: address,
+    domain: typedData.domain as {
+      name?: string;
+      version?: string;
+      chainId?: number;
+      verifyingContract?: `0x${string}`;
+    },
+    types: typedData.types as Record<string, Array<{ name: string; type: string }>>,
+    primaryType: typedData.primaryType,
+    message: typedData.message
+  });
+}
+
+async function ensureProviderChain(exchangeClient: ExchangeClient): Promise<void> {
+  const config = (exchangeClient as unknown as { config_?: { wallet?: Eip1193Provider; signatureChainId?: string } }).config_;
+  const provider = config?.wallet;
+  if (!provider?.request) {
+    return;
+  }
+
+  const currentChainId = await provider.request({ method: "eth_chainId" }).catch(() => undefined);
+  if (currentChainId === ARBITRUM_ONE_SIGNATURE_CHAIN_ID) {
+    return;
+  }
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: ARBITRUM_ONE_SIGNATURE_CHAIN_ID }]
+    });
+  } catch {
+    // Rabby/WalletConnect pueden negarse a cambiar desde la dapp; en ese caso se sigue con la firma.
+  }
 }
 
 function stringOrUndefined(value: unknown): string | undefined {
