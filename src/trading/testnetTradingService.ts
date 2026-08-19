@@ -690,7 +690,7 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
     },
     async getAddresses() {
       const accounts = await getViemAddresses(walletClient);
-      return accounts.map((account) => account as `0x${string}`);
+      return accounts.map((account) => normalizeAddress(account));
     },
     async getChainId() {
       const rawChainId = (await provider.request({ method: "eth_chainId" })) as string;
@@ -726,9 +726,11 @@ async function requestTypedDataSignature(
     message: Record<string, unknown>;
   }
 ) {
+  const normalizedAddress = normalizeAddress(address);
+
   try {
     return await signTypedDataWithViem(walletClient, {
-      account: address,
+      account: normalizedAddress,
       domain: typedData.domain as {
         name: string;
         version: string;
@@ -755,7 +757,7 @@ async function requestTypedDataSignature(
       message: typedData.message
     });
 
-    return await requestTypedDataSignatureFallback(provider, address, payload, typedData, error);
+    return await requestTypedDataSignatureFallback(provider, normalizedAddress, payload, typedData, error);
   }
 }
 
