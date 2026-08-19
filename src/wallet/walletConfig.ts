@@ -1,8 +1,8 @@
 const LOCALHOST_WALLETCONNECT_PROJECT_ID = "b56e18d47c72ab683b10814fe9495694";
 const METAMASK_WALLETCONNECT_ID = "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96";
 const RABBY_WALLETCONNECT_ID = "18388be9ac2d02726dbac9777c96efaac06d744b2f6d580fccdd4127a6d01fd1";
-const WALLETCONNECT_REQUIRED_CHAINS = [1] as const;
-const WALLETCONNECT_OPTIONAL_CHAINS = [42161] as const;
+const WALLETCONNECT_REQUIRED_CHAINS = [42161] as const;
+const WALLETCONNECT_OPTIONAL_CHAINS = [1] as const;
 const WALLETCONNECT_REQUIRED_METHODS = [
   "eth_requestAccounts",
   "eth_accounts",
@@ -14,8 +14,8 @@ const WALLETCONNECT_REQUIRED_METHODS = [
 ] as const;
 const WALLETCONNECT_REQUIRED_EVENTS = ["chainChanged", "accountsChanged"] as const;
 const WALLETCONNECT_RPC_MAP = {
-  1: "https://cloudflare-eth.com",
-  42161: "https://arb1.arbitrum.io/rpc"
+  42161: "https://arb1.arbitrum.io/rpc",
+  1: "https://cloudflare-eth.com"
 } satisfies Record<number, string>;
 
 const PROJECT_ID_PATTERN = /^[a-f0-9]{32}$/i;

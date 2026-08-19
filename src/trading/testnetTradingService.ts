@@ -37,6 +37,7 @@ type TradingSubscriptions = {
 type TradingUpdateListener = (patch: Partial<TradingSnapshot> | ((current: TradingSnapshot) => TradingSnapshot)) => void;
 
 const TESTNET_CLEARINGHOUSE_URL = "https://api.hyperliquid-testnet.xyz";
+const ARBITRUM_ONE_SIGNATURE_CHAIN_ID = "0xa4b1" as const;
 
 export function getExecutionEligibility(args: {
   tradingEnvironment: "testnet" | "mainnet";
@@ -120,7 +121,8 @@ export function createTestnetTradingClients(provider: Eip1193Provider): Transpor
     }) as ExchangeClient,
     approvalExchangeClient: new ExchangeClient({
       transport: httpTransport,
-      wallet
+      wallet,
+      signatureChainId: ARBITRUM_ONE_SIGNATURE_CHAIN_ID
     }) as ExchangeClient,
     subscriptionClient: new SubscriptionClient({ transport: wsTransport }),
     wsTransport,
