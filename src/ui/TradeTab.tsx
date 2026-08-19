@@ -189,7 +189,7 @@ export function TradeTab({
           <Line label="Estado" value={walletAddress ? "Conectada" : "No conectada"} />
           <Line label="Direccion auditada" value={auditAddress ? shortAddress(auditAddress) : "Sin configurar"} />
           <Line label="Coincidencia" value={auditAddressMatches === undefined ? "Pendiente" : auditAddressMatches ? "Coincide" : "No coincide"} />
-          <div className="caption">La primera operacion de cada sesion puede pedir una firma para autorizar el agente local de Testnet. Las ordenes posteriores usan ese agente efimero en memoria.</div>
+          <div className="caption">Cada operacion Testnet solicita firma local en la wallet conectada. No se usa un agente intermedio en la ruta activa de operativa.</div>
         </div>
 
         {!trading.eligibility.allowed && (

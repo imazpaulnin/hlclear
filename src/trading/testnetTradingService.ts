@@ -1,7 +1,6 @@
 import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocketTransport } from "@nktkas/hyperliquid";
 import type { AbstractViemJsonRpcAccount } from "@nktkas/hyperliquid/signing";
 import { createWalletClient, custom } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { calculateBreakEvenPrice } from "../domain/trade/breakEven";
 import { getTradeOutcomeStatus } from "../domain/trade/simulation";
 import { dec } from "../domain/decimal";
@@ -105,7 +104,6 @@ export function buildConfirmationSummary(intent: {
 
 export function createTestnetTradingClients(provider: Eip1193Provider): TransportBundle {
   const wallet = createBrowserWalletAdapter(provider);
-  const agentWallet = createEphemeralAgentWallet();
   const httpTransport = new HttpTransport({
     isTestnet: true,
     apiUrl: TESTNET_CLEARINGHOUSE_URL
@@ -118,7 +116,7 @@ export function createTestnetTradingClients(provider: Eip1193Provider): Transpor
     infoClient: new InfoClient({ transport: httpTransport }),
     exchangeClient: new ExchangeClient({
       transport: httpTransport,
-      wallet: agentWallet
+      wallet
     }) as ExchangeClient,
     approvalExchangeClient: new ExchangeClient({
       transport: httpTransport,
@@ -127,8 +125,8 @@ export function createTestnetTradingClients(provider: Eip1193Provider): Transpor
     }) as ExchangeClient,
     subscriptionClient: new SubscriptionClient({ transport: wsTransport }),
     wsTransport,
-    agentAddress: normalizeAddress(agentWallet.address),
-    agentApproved: false
+    agentAddress: "0x0000000000000000000000000000000000000000",
+    agentApproved: true
   };
 }
 
@@ -415,10 +413,10 @@ export function normalizeTradingError(error: unknown): string {
     return "Firma cancelada en la wallet.";
   }
   if (lower.includes("failed to sign the typed data using the wallet") || lower.includes("sign typed data")) {
-    return "La wallet conectada no pudo autorizar el agente de Testnet. Reintenta la firma inicial y vuelve a enviar la orden.";
+    return "La wallet conectada no pudo firmar la operacion de Testnet. Revisa la solicitud en Rabby o WalletConnect y vuelve a intentarlo.";
   }
   if ((lower.includes("api wallet") || lower.includes("agent")) && lower.includes("does not exist")) {
-    return "El agente local de Testnet no quedo autorizado para operar. Vuelve a intentarlo para renovar la autorizacion.";
+    return "Hyperliquid no reconocio la firma de la operacion Testnet. Reintenta la orden desde la wallet conectada.";
   }
   if (lower.includes("insufficient") || lower.includes("margin")) {
     return "Saldo o margen insuficiente para completar la operacion.";
@@ -695,20 +693,7 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
   };
 }
 
-function createEphemeralAgentWallet() {
-  return privateKeyToAccount(generatePrivateKey());
-}
-
 async function ensureAgentApproved(bundle: TransportBundle): Promise<void> {
-  if (bundle.agentApproved) {
-    return;
-  }
-
-  await ensureProviderChain(bundle.approvalExchangeClient);
-  await bundle.approvalExchangeClient.approveAgent({
-    agentAddress: bundle.agentAddress,
-    agentName: ""
-  });
   bundle.agentApproved = true;
 }
 
@@ -820,27 +805,6 @@ async function signTypedDataWithViem(
   });
 }
 
-async function ensureProviderChain(exchangeClient: ExchangeClient): Promise<void> {
-  const config = (exchangeClient as unknown as { config_?: { wallet?: Eip1193Provider; signatureChainId?: string } }).config_;
-  const provider = config?.wallet;
-  if (!provider?.request) {
-    return;
-  }
-
-  const currentChainId = await provider.request({ method: "eth_chainId" }).catch(() => undefined);
-  if (currentChainId === ARBITRUM_ONE_SIGNATURE_CHAIN_ID) {
-    return;
-  }
-
-  try {
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: ARBITRUM_ONE_SIGNATURE_CHAIN_ID }]
-    });
-  } catch {
-    // Rabby/WalletConnect pueden negarse a cambiar desde la dapp; en ese caso se sigue con la firma.
-  }
-}
 
 function stringOrUndefined(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : String(value);
