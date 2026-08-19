@@ -2,6 +2,7 @@ import { ExchangeClient, HttpTransport, InfoClient, SubscriptionClient, WebSocke
 import type { AbstractViemJsonRpcAccount } from "@nktkas/hyperliquid/signing";
 import { createWalletClient, custom } from "viem";
 import { getAddresses as getViemAddresses, signTypedData as signTypedDataWithViem } from "viem/actions";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { calculateBreakEvenPrice } from "../domain/trade/breakEven";
 import { getTradeOutcomeStatus } from "../domain/trade/simulation";
 import { dec } from "../domain/decimal";
@@ -24,8 +25,11 @@ import type {
 type TransportBundle = {
   infoClient: InfoClient;
   exchangeClient: ExchangeClient;
+  approvalExchangeClient: ExchangeClient;
   subscriptionClient: SubscriptionClient;
   wsTransport: WebSocketTransport;
+  agentAddress: `0x${string}`;
+  agentApproved: boolean;
 };
 
 type TradingSubscriptions = {
@@ -101,6 +105,7 @@ export function buildConfirmationSummary(intent: {
 
 export function createTestnetTradingClients(provider: Eip1193Provider): TransportBundle {
   const wallet = createBrowserWalletAdapter(provider);
+  const agentWallet = createEphemeralAgentWallet();
   const httpTransport = new HttpTransport({
     isTestnet: true,
     apiUrl: TESTNET_CLEARINGHOUSE_URL
@@ -113,10 +118,16 @@ export function createTestnetTradingClients(provider: Eip1193Provider): Transpor
     infoClient: new InfoClient({ transport: httpTransport }),
     exchangeClient: new ExchangeClient({
       transport: httpTransport,
+      wallet: agentWallet
+    }) as ExchangeClient,
+    approvalExchangeClient: new ExchangeClient({
+      transport: httpTransport,
       wallet
     }) as ExchangeClient,
     subscriptionClient: new SubscriptionClient({ transport: wsTransport }),
-    wsTransport
+    wsTransport,
+    agentAddress: normalizeAddress(agentWallet.address),
+    agentApproved: false
   };
 }
 
@@ -124,6 +135,7 @@ export async function submitPreparedTrade(
   bundle: TransportBundle,
   input: SubmitPreparedTradeInput
 ): Promise<SubmittedOrderStatus> {
+  await ensureAgentApproved(bundle);
   const isCross = input.marginMode === "cross";
   await bundle.exchangeClient.updateLeverage({
     asset: input.assetIndex,
@@ -145,6 +157,7 @@ export async function cancelSingleOrder(
   assetIndex: number,
   orderId: number
 ): Promise<SubmittedOrderStatus> {
+  await ensureAgentApproved(bundle);
   const response = await bundle.exchangeClient.cancel({
     cancels: [{ a: assetIndex, o: orderId }]
   });
@@ -196,6 +209,7 @@ export async function cancelAllOrders(
     };
   }
 
+  await ensureAgentApproved(bundle);
   const response = await bundle.exchangeClient.cancel({ cancels });
   const failed = response.response.data.statuses.find((status) => status !== "success");
 
@@ -220,6 +234,7 @@ export async function closePosition(
   input: PositionCloseInput,
   szDecimals = 3
 ): Promise<SubmittedOrderStatus> {
+  await ensureAgentApproved(bundle);
   const closeSide = position.side === "long" ? "short" : "long";
   const absoluteSize = dec(position.size).abs();
   const size = absoluteSize.mul(dec(input.percentage).div(100));
@@ -399,7 +414,10 @@ export function normalizeTradingError(error: unknown): string {
     return "Firma cancelada en la wallet.";
   }
   if (lower.includes("failed to sign the typed data using the wallet") || lower.includes("sign typed data")) {
-    return "La wallet conectada no pudo firmar la solicitud EIP-712 de Hyperliquid. Reintenta y, si sigue igual, cambia la variante de firma compatible con Rabby/WalletConnect.";
+    return "La wallet conectada no pudo autorizar el agente de Testnet. Reintenta la firma inicial y vuelve a enviar la orden.";
+  }
+  if ((lower.includes("api wallet") || lower.includes("agent")) && lower.includes("does not exist")) {
+    return "El agente local de Testnet no quedo autorizado para operar. Vuelve a intentarlo para renovar la autorizacion.";
   }
   if (lower.includes("insufficient") || lower.includes("margin")) {
     return "Saldo o margen insuficiente para completar la operacion.";
@@ -681,6 +699,22 @@ export function createBrowserWalletAdapter(provider: Eip1193Provider): AbstractV
   };
 }
 
+function createEphemeralAgentWallet() {
+  return privateKeyToAccount(generatePrivateKey());
+}
+
+async function ensureAgentApproved(bundle: TransportBundle): Promise<void> {
+  if (bundle.agentApproved) {
+    return;
+  }
+
+  await bundle.approvalExchangeClient.approveAgent({
+    agentAddress: bundle.agentAddress,
+    agentName: ""
+  });
+  bundle.agentApproved = true;
+}
+
 async function requestTypedDataSignature(
   walletClient: ReturnType<typeof createWalletClient>,
   provider: Eip1193Provider,
@@ -771,4 +805,8 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return value === undefined || value === null ? undefined : Number(value);
+}
+
+function normalizeAddress(address: string): `0x${string}` {
+  return address.toLowerCase() as `0x${string}`;
 }

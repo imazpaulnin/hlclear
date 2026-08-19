@@ -38,6 +38,7 @@ describe("testnet trading service", () => {
   });
 
   it("submits an order only to testnet clients after setting leverage", async () => {
+    const approveAgent = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
     const updateLeverage = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
     const order = vi.fn().mockResolvedValue({
       status: "ok",
@@ -52,9 +53,12 @@ describe("testnet trading service", () => {
     const result = await submitPreparedTrade(
       {
         exchangeClient: { updateLeverage, order },
+        approvalExchangeClient: { approveAgent },
         infoClient: {} as never,
         subscriptionClient: {} as never,
-        wsTransport: { close: vi.fn() } as never
+        wsTransport: { close: vi.fn() } as never,
+        agentAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        agentApproved: false
       } as never,
       {
         assetIndex: 0,
@@ -103,11 +107,87 @@ describe("testnet trading service", () => {
       isCross: true,
       leverage: 5
     });
+    expect(approveAgent).toHaveBeenCalledWith({
+      agentAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      agentName: ""
+    });
     expect(order).toHaveBeenCalledTimes(1);
     expect(result.phase).toBe("aceptada");
   });
 
+  it("approves the local testnet agent only once per session bundle", async () => {
+    const approveAgent = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
+    const updateLeverage = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
+    const order = vi.fn().mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ resting: { oid: 123 } }]
+        }
+      }
+    });
+
+    const bundle = {
+      exchangeClient: { updateLeverage, order },
+      approvalExchangeClient: { approveAgent },
+      infoClient: {} as never,
+      subscriptionClient: {} as never,
+      wsTransport: { close: vi.fn() } as never,
+      agentAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      agentApproved: false
+    } as never;
+
+    const input = {
+      assetIndex: 0,
+      marginMode: "cross" as const,
+      leverage: "5",
+      slippageBps: "5",
+      prepared: {
+        asset: { coin: "BTC", currentPrice: "100000", maxLeverage: 20, szDecimals: 3 },
+        side: "long" as const,
+        executionMode: "taker" as const,
+        currentPrice: "100000",
+        estimatedEntryPrice: "100050",
+        marginUsdc: "100",
+        notionalUsdc: "500",
+        leverage: "5",
+        entryFeeUsdc: "0.2",
+        exitFeeUsdc: "0.2",
+        totalRoundTripFeesUsdc: "0.4",
+        fundingRate: "0.0001",
+        fundingEstimateUsdc: "-0.05",
+        slippageBps: "5",
+        slippageCostUsdc: "0.25",
+        totalCostsUsdc: "0.65",
+        breakEvenMovePct: "0.13",
+        breakEvenPrice: "100180",
+        liquidationPrice: "80000",
+        liquidationReliable: true,
+        simulated: {
+          movePct: "1",
+          futurePrice: "101000",
+          grossPnl: "5",
+          fees: "0.4",
+          funding: "-0.05",
+          netPnl: "4.55",
+          status: { color: "green" as const, label: "Beneficio neto" as const, reason: "ok" }
+        },
+        riskRows: [],
+        finalScenarios: [],
+        validationErrors: []
+      }
+    };
+
+    await submitPreparedTrade(bundle, input);
+    await submitPreparedTrade(bundle, input);
+
+    expect(approveAgent).toHaveBeenCalledTimes(1);
+    expect(order).toHaveBeenCalledTimes(2);
+  });
+
   it("cancels all open testnet orders by asset and oid", async () => {
+    const approveAgent = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
     const cancel = vi.fn().mockResolvedValue({
       status: "ok",
       response: {
@@ -132,9 +212,12 @@ describe("testnet trading service", () => {
     const result = await cancelAllOrders(
       {
         exchangeClient: { cancel },
+        approvalExchangeClient: { approveAgent },
         infoClient: {} as never,
         subscriptionClient: {} as never,
-        wsTransport: { close: vi.fn() } as never
+        wsTransport: { close: vi.fn() } as never,
+        agentAddress: "0xcccccccccccccccccccccccccccccccccccccccc",
+        agentApproved: false
       } as never,
       snapshot,
       universe
@@ -150,6 +233,7 @@ describe("testnet trading service", () => {
   });
 
   it("closes positions with reduce only IOC orders", async () => {
+    const approveAgent = vi.fn().mockResolvedValue({ status: "ok", response: { type: "default" } });
     const order = vi.fn().mockResolvedValue({
       status: "ok",
       response: {
@@ -177,9 +261,12 @@ describe("testnet trading service", () => {
     const result = await closePosition(
       {
         exchangeClient: { order },
+        approvalExchangeClient: { approveAgent },
         infoClient: {} as never,
         subscriptionClient: {} as never,
-        wsTransport: { close: vi.fn() } as never
+        wsTransport: { close: vi.fn() } as never,
+        agentAddress: "0xdddddddddddddddddddddddddddddddddddddddd",
+        agentApproved: false
       } as never,
       position,
       {
@@ -213,7 +300,8 @@ describe("testnet trading service", () => {
     expect(normalizeTradingError(new Error("insufficient margin"))).toBe("Saldo o margen insuficiente para completar la operacion.");
     expect(normalizeTradingError(new Error("nonce already used"))).toContain("nonce");
     expect(normalizeTradingError(new Error("socket closed"))).toBe("No se pudo contactar con Hyperliquid Testnet.");
-    expect(normalizeTradingError(new Error("Failed to sign the typed data using the wallet"))).toContain("EIP-712");
+    expect(normalizeTradingError(new Error("Failed to sign the typed data using the wallet"))).toContain("agente");
+    expect(normalizeTradingError(new Error("L1 error: User or API Wallet 0x123 does not exist."))).toContain("agente");
   });
 
   it("includes EIP712Domain and falls back across typed-data RPC variants for mobile wallets", async () => {

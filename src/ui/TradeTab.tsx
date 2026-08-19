@@ -189,6 +189,7 @@ export function TradeTab({
           <Line label="Estado" value={walletAddress ? "Conectada" : "No conectada"} />
           <Line label="Direccion auditada" value={auditAddress ? shortAddress(auditAddress) : "Sin configurar"} />
           <Line label="Coincidencia" value={auditAddressMatches === undefined ? "Pendiente" : auditAddressMatches ? "Coincide" : "No coincide"} />
+          <div className="caption">La primera operacion de cada sesion puede pedir una firma para autorizar el agente local de Testnet. Las ordenes posteriores usan ese agente efimero en memoria.</div>
         </div>
 
         {!trading.eligibility.allowed && (
@@ -640,9 +641,9 @@ export function TradeTab({
 
       {showConfirmation && trade && confirmation && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="trade-confirmation-title">
-          <div className="modal stack trade-confirmation-modal">
+            <div className="modal stack trade-confirmation-modal">
             <div className="section-title section-title-wrap">
-              <h2 id="trade-confirmation-title">Confirmar en wallet</h2>
+              <h2 id="trade-confirmation-title">Confirmar operacion</h2>
               <button className="button secondary compact-button" type="button" onClick={() => setShowConfirmation(false)}>
                 Cerrar
               </button>
@@ -680,7 +681,7 @@ export function TradeTab({
               disabled={!trading.eligibility.allowed || trading.submitting}
               onClick={() => void handleConfirmInWallet()}
             >
-              {trading.submitting ? "Esperando wallet..." : "CONFIRMAR EN WALLET"}
+              {trading.submitting ? "Enviando..." : "CONFIRMAR OPERACION"}
             </button>
           </div>
         </div>
