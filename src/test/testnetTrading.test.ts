@@ -328,7 +328,9 @@ describe("testnet trading service", () => {
       primaryType: "Agent",
       message: {
         source: "b",
-        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111"
+        connectionId: "0x1111111111111111111111111111111111111111111111111111111111111111",
+        signatureChainId: "0xa4b1",
+        type: "approveAgent"
       }
     });
 
@@ -336,14 +338,36 @@ describe("testnet trading service", () => {
     const signAttempts = request.mock.calls
       .map((call) => call[0] as { method?: string; params?: unknown[] })
       .filter((call) => call.method?.startsWith("eth_signTypedData"));
+    const serializedParams = signAttempts.flatMap((attempt) => (attempt.params ?? []).map((param) => (typeof param === "string" ? param : JSON.stringify(param))));
+    const payloadCandidates = signAttempts
+      .flatMap((attempt) => attempt.params ?? [])
+      .map((param) => {
+        if (typeof param !== "string") {
+          return typeof param === "object" && param !== null ? param : undefined;
+        }
+
+        try {
+          return JSON.parse(param) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((candidate): candidate is Record<string, unknown> => Boolean(candidate && typeof candidate === "object"));
 
     expect(signAttempts.length).toBeGreaterThan(0);
     expect(
-      signAttempts.some((attempt) =>
-        attempt.params?.some(
-          (param) => typeof param === "string" && param.includes("\"EIP712Domain\"")
-        )
-      )
+      serializedParams.some((param) => param.includes("\"EIP712Domain\""))
+    ).toBe(true);
+    expect(
+      payloadCandidates.some((candidate) => {
+        const message = candidate.message as Record<string, unknown> | undefined;
+        return (
+          Boolean(message) &&
+          message?.connectionId === "0x1111111111111111111111111111111111111111111111111111111111111111" &&
+          !("signatureChainId" in message) &&
+          !("type" in message)
+        );
+      })
     ).toBe(true);
   });
 });

@@ -720,6 +720,10 @@ async function requestTypedDataSignature(
     message: Record<string, unknown>;
   }
 ) {
+  const allowedFieldNames = new Set((typedData.types[typedData.primaryType] ?? []).map((field) => field.name));
+  const filteredMessage = Object.fromEntries(
+    Object.entries(typedData.message).filter(([key]) => allowedFieldNames.has(key))
+  );
   const typesWithDomain = "EIP712Domain" in typedData.types
     ? typedData.types
     : {
@@ -735,7 +739,7 @@ async function requestTypedDataSignature(
     domain: typedData.domain,
     types: typesWithDomain,
     primaryType: typedData.primaryType,
-    message: typedData.message
+    message: filteredMessage
   };
   const payload = JSON.stringify(payloadObject);
 
